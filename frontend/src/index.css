@@ -1,0 +1,219 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;900&family=Barlow:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 60 2% 76%;
+    --foreground: 60 5% 10%;
+
+    --card: 60 5% 10%;
+    --card-foreground: 60 2% 76%;
+
+    --popover: 60 5% 10%;
+    --popover-foreground: 60 2% 76%;
+
+    --primary: 8 86% 57%;
+    --primary-foreground: 60 5% 10%;
+
+    --secondary: 60 3% 16%;
+    --secondary-foreground: 60 2% 76%;
+
+    --muted: 60 3% 16%;
+    --muted-foreground: 60 2% 55%;
+
+    --accent: 8 86% 57%;
+    --accent-foreground: 60 5% 10%;
+
+    --destructive: 8 86% 57%;
+    --destructive-foreground: 60 5% 10%;
+
+    --border: 60 5% 10% / 0.12;
+    --input: 60 5% 10% / 0.12;
+    --ring: 8 86% 57%;
+
+    --radius: 0px;
+
+    --sidebar-background: 60 5% 10%;
+    --sidebar-foreground: 60 2% 76%;
+    --sidebar-primary: 8 86% 57%;
+    --sidebar-primary-foreground: 60 5% 10%;
+    --sidebar-accent: 60 3% 16%;
+    --sidebar-accent-foreground: 60 2% 76%;
+    --sidebar-border: 60 2% 76% / 0.15;
+    --sidebar-ring: 8 86% 57%;
+
+    --bg-light: #C8C8C4;
+    --bg-dark: #1A1A18;
+    --bg-mid: #2A2A28;
+    --signal: #F04C35;
+    --text-light: #C8C8C4;
+    --text-muted-raw: rgba(200, 200, 196, 0.55);
+    --border-light: rgba(200, 200, 196, 0.15);
+
+    --font-display: 'Barlow Condensed', sans-serif;
+    --font-body: 'Barlow', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+
+    --ticker-h: 32px;
+    --nav-h: 52px;
+    --bottom-h: 36px;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    border-radius: 0 !important;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg-light);
+    color: var(--bg-dark);
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+/* Mono label utility */
+.mono-label {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.mono-label-lg {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 900;
+}
+
+/* Grain texture overlay */
+.grain-overlay {
+  position: relative;
+}
+
+.grain-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+/* Ticker animation */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-animate {
+  animation: ticker-scroll 60s linear infinite;
+}
+
+.ticker-animate:hover {
+  animation-play-state: paused;
+}
+
+/* Alert pulse */
+@keyframes alert-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.alert-pulse {
+  animation: alert-pulse 1.2s ease-in-out infinite;
+}
+
+/* Count up tick */
+@keyframes count-tick {
+  0% {
+    opacity: 0.5;
+    transform: translateY(2px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Nav underline slide */
+.nav-link {
+  position: relative;
+  display: inline-block;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--signal);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 200ms ease-out;
+}
+
+.nav-link:hover::after {
+  transform: scaleX(1);
+}
+
+/* Skeleton pulse for loading */
+@keyframes skeleton-pulse {
+
+  0%,
+  100% {
+    background-color: #2A2A28;
+  }
+
+  50% {
+    background-color: #3A3A38;
+  }
+}
+
+.skeleton-block {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* MapLibre Popup Overrides */
+.crisis-popup .maplibregl-popup-content {
+  background: var(--bg-mid);
+  color: var(--text-light);
+  border: 1px solid var(--border-light);
+  border-radius: 0;
+  padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.crisis-popup .maplibregl-popup-tip {
+  border-top-color: var(--bg-mid) !important;
+  border-bottom-color: var(--bg-mid) !important;
+}
