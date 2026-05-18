@@ -6,7 +6,7 @@ export default function Timeline() {
 
     return (
         <div className="flex-1 flex flex-col bg-bg-dark border-l border-signal/10 h-full overflow-hidden relative">
-            <div className="absolute inset-0 bg-bg-light grain-overlay opacity-50 pointer-events-none" />
+            <div className="absolute inset-0 bg-bg-mid opacity-50 pointer-events-none" />
 
             <div className="h-14 border-b border-border-light flex items-center px-6 bg-bg-mid relative z-10 shrink-0">
                 <Clock size={20} className="text-signal mr-3" />
@@ -19,7 +19,7 @@ export default function Timeline() {
                     <div className="absolute top-0 bottom-0 left-[23px] w-px bg-signal/20" />
 
                     {loading ? (
-                        <div className="py-12 text-center mono-label text-bg-dark/40 animate-pulse">
+                        <div className="py-12 text-center mono-label text-text-light/40 animate-pulse">
                             SYNCING PAST 24 HOURS OF TACTICAL FEEDS...
                         </div>
                     ) : intel.length === 0 ? (
@@ -46,7 +46,7 @@ export default function Timeline() {
                                         </span>
                                         <span className="text-[11px] font-mono text-text-light/60">{item.time}</span>
                                         <span className={`text-[10px] font-mono px-1.5 border ${item.riskLevel === 'critical' ? 'border-red-500 text-red-500 bg-red-500/10' :
-                                                item.riskLevel === 'high' ? 'border-orange-500 text-orange-500 bg-orange-500/10' :
+                                                item.riskLevel === 'high' ? 'border-lime-600 text-lime-600 bg-lime-600/10' :
                                                     item.riskLevel === 'medium' ? 'border-amber-500 text-amber-500 bg-amber-500/10' :
                                                         'border-signal text-signal bg-signal/10'
                                             }`}>

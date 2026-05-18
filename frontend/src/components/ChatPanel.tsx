@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { HfInference } from "@huggingface/inference";
 import { Bot, X, Send } from "lucide-react";
 import type { PersonnelRecord } from "@/components/CsvUploader";
 import type { IntelItem } from "@/lib/intel-service";
 
-// Initialize the HF client. We fall back to a public model if no token is available, though it might hit rate limits.
-const hfToken = import.meta.env.VITE_HF_TOKEN || "";
-const hf = new HfInference(hfToken);
-const MODEL = "Qwen/Qwen2.5-72B-Instruct"; // Heavy, powerful model for exact RAG extraction
+// ── Groq config ────────────────────────────────────────────────────────────
+const GROQ_KEY  = (import.meta as any).env?.VITE_GROQ_API_KEY as string | undefined;
+const CHAT_MODEL = 'llama-3.3-70b-versatile'; // Best conversational reasoning on Groq
 
 interface ChatPanelProps {
     isOpen: boolean;
@@ -16,20 +14,41 @@ interface ChatPanelProps {
     intel?: IntelItem[];
 }
 
+interface Message {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+// Detect if a response contains risk/alert keywords for block styling
+function hasRiskContent(text: string): boolean {
+    return /\b(critical|urgent|alert|threat|attack|breach|warning|caution|emergency|hostile|active)\b/i.test(text);
+}
+
+const SUGGESTION_CHIPS = [
+    'Brief me on top 3 threats',
+    'Correlate with historical data',
+    'Generate ORBAT for active AOR',
+    'Risk score for next 24h',
+];
+
 export default function ChatPanel({ isOpen, onClose, assets = [], intel = [] }: ChatPanelProps) {
     const [input, setInput] = useState("");
-    const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
-        { role: 'assistant', content: "VARUNA.AI COPILOT INITIALIZED. Awaiting tactical query regarding active conflicts, feed data, or area briefings." }
+    const [messages, setMessages] = useState<Message[]>([
+        {
+            role: 'assistant',
+            content: "VARUNA.AI COPILOT INITIALIZED.\nAwaiting tactical query — active conflicts, feed data, asset status, or area briefings.",
+        },
     ]);
     const [isTyping, setIsTyping] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (scrollRef.current)
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [messages, isTyping]);
 
     const handleSend = async () => {
-        if (!input.trim()) return;
+        if (!input.trim() || isTyping) return;
 
         const userMsg = input.trim();
         setInput("");
@@ -37,7 +56,15 @@ export default function ChatPanel({ isOpen, onClose, assets = [], intel = [] }: 
         setIsTyping(true);
 
         try {
-            // Aggregate assets by country for the LLM to prevent hallucination of numbers
+            if (!GROQ_KEY) {
+                setMessages(prev => [...prev, {
+                    role: 'assistant',
+                    content: '[CRITICAL ERROR] VITE_GROQ_API_KEY not set in .env.local. Copilot offline.',
+                }]);
+                return;
+            }
+
+            // Build context strings
             const countryCounts: Record<string, number> = {};
             assets.forEach(a => {
                 const c = (a.country || 'UNKNOWN').toUpperCase().trim();
@@ -45,62 +72,65 @@ export default function ChatPanel({ isOpen, onClose, assets = [], intel = [] }: 
             });
 
             const assetStats = Object.keys(countryCounts).length > 0
-                ? Object.entries(countryCounts).map(([c, count]) => `${count} personnel in ${c}`).join("; ")
-                : "0 personnel total";
+                ? Object.entries(countryCounts).map(([c, n]) => `${n} personnel in ${c}`).join('; ')
+                : '0 personnel total';
 
-            // Serialize local databases for context injection
             const assetsContext = assets.length > 0
-                ? `Total ${assets.length} personnel tracking. Breakdown: ${assetStats}. Raw list: ${JSON.stringify(assets.map(a => ({ name: a.name, country: (a.country || 'UNKNOWN').toUpperCase().trim() })))}`
-                : "No personnel tracked. Exactly 0 assets.";
+                ? `${assets.length} total. Breakdown: ${assetStats}. Raw: ${JSON.stringify(assets.map(a => ({ name: a.name, country: (a.country || 'UNKNOWN').toUpperCase().trim() })))}`
+                : 'No personnel tracked. Exactly 0 assets.';
 
             const intelContext = intel.length > 0
-                ? `JSON format: ${JSON.stringify(intel.slice(0, 5).map(i => ({ headline: i.headline, location: i.source })))}`
-                : "No live intel available.";
+                ? JSON.stringify(intel.slice(0, 6).map(i => ({ headline: i.headline, location: i.source })))
+                : 'No live intel available.';
 
-            // Create chat history
-            const formattedMessages = [
-                {
-                    role: 'system', content: `You are VARUNA.AI, a highly classified Indian OSINT military intelligence dashboard. Keep responses extremely concise, tactical, and analytical. Use military terminology. 
-                
-CRITICAL RULES:
-1. DO NOT hallucinate or guess numbers.
-2. If the user asks how many assets/personnel/people are in a country, YOU MUST read ONLY the <ACTIVE_ASSETS> block.
-3. If the country is not listed in the <ACTIVE_ASSETS> block, the answer is EXACTLY ZERO.
-4. Be smart with typos (e.g. "ndia" is "INDIA", "usa" is "USA", "spainn" is "SPAIN"). Match to the closest country in the list.
-5. Base current events exclusively on the <LIVE_OSINT_FEED> block. Do not invent news.
-6. NEVER confuse personnel assets and OSINT feeds. They are two totally separate systems.
-7. If asked about pipelines or data centers, refer to the user's latest context or state that the OSINT feed is monitoring them.
+            const systemPrompt =
+                `You are VARUNA.AI, a classified Indian OSINT military intelligence assistant.\n` +
+                `Respond concisely, tactically, and analytically in military prose.\n\n` +
+                `CRITICAL RULES:\n` +
+                `1. DO NOT hallucinate or guess numbers.\n` +
+                `2. Personnel queries → read ONLY <ACTIVE_ASSETS>.\n` +
+                `3. Current events → read ONLY <LIVE_OSINT_FEED>.\n` +
+                `4. Handle typos intelligently (e.g. "ndia"→INDIA, "pakstan"→PAKISTAN).\n` +
+                `5. Never confuse personnel assets with OSINT feeds.\n\n` +
+                `<ACTIVE_ASSETS>\n${assetsContext}\n</ACTIVE_ASSETS>\n\n` +
+                `<LIVE_OSINT_FEED>\n${intelContext}\n</LIVE_OSINT_FEED>\n\n` +
+                `Answer ONLY from this data. Max 250 words.`;
 
-<ACTIVE_ASSETS>
-${assetsContext}
-</ACTIVE_ASSETS>
-
-<LIVE_OSINT_FEED>
-${intelContext}
-</LIVE_OSINT_FEED>
-
-Answer the user directly based ONLY on this exact data.`
-                }, ...messages.map(m => ({ role: m.role, content: m.content })),
-                { role: 'user', content: userMsg }
+            // Full conversation history for Groq
+            const groqMessages = [
+                { role: 'system', content: systemPrompt },
+                ...messages.map(m => ({ role: m.role, content: m.content })),
+                { role: 'user', content: userMsg },
             ];
 
-            const response = await hf.chatCompletion({
-                model: MODEL,
-                // @ts-ignore - messages shape is correctly matching HF API standard format
-                messages: formattedMessages,
-                max_tokens: 350,
-                temperature: 0.3,
+            const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${GROQ_KEY}`,
+                },
+                body: JSON.stringify({
+                    model: CHAT_MODEL,
+                    messages: groqMessages,
+                    max_tokens: 400,
+                    temperature: 0.3,
+                }),
+                signal: AbortSignal.timeout(20_000),
             });
 
-            const reply = response.choices[0]?.message?.content || "TRANSMISSION ERROR: No intel received.";
+            if (!resp.ok) {
+                const err = await resp.text();
+                throw new Error(`Groq ${resp.status}: ${err}`);
+            }
+
+            const data = await resp.json();
+            const reply = data.choices?.[0]?.message?.content ?? '[TRANSMISSION ERROR] No intel received.';
             setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
         } catch (err: any) {
-            const msg = err?.message || String(err);
-            if (msg.includes("Authorization") || msg.includes("non-Hugging Face API key") || msg.includes("Token is required")) {
-                setMessages(prev => [...prev, { role: 'assistant', content: `[CRITICAL ERROR] Unauthorized access. The HuggingFace Inference API requires a valid token for the Llama-3 model. Please set VITE_HF_TOKEN in your .env file and restart the dashboard.` }]);
-            } else {
-                setMessages(prev => [...prev, { role: 'assistant', content: `[CONNECTION ERROR] Communications array failed: ${msg}` }]);
-            }
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `[CONNECTION ERROR] Comms array failed: ${err?.message ?? String(err)}`,
+            }]);
         } finally {
             setIsTyping(false);
         }
@@ -109,53 +139,198 @@ Answer the user directly based ONLY on this exact data.`
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-12 right-6 w-96 max-h-[600px] h-[70vh] bg-bg-mid border border-signal shadow-2xl flex flex-col z-50 overflow-hidden transform transition-all duration-300">
-            {/* Header */}
-            <div className="h-10 border-b border-signal/30 flex items-center justify-between px-3 bg-bg-dark">
+        <div
+            className="fixed right-6 w-[400px] flex flex-col z-50 overflow-hidden"
+            style={{
+                bottom: 'calc(var(--bottom-h) + 12px)',
+                height: '70vh',
+                maxHeight: 640,
+                background: 'var(--bg-mid)',
+                border: '1px solid var(--signal)',
+                boxShadow: '0 0 40px rgba(0,240,255,0.08), 0 8px 32px rgba(0,0,0,0.8)',
+            }}
+        >
+            {/* ── Header ─────────────────────────────────────────────── */}
+            <div
+                className="flex items-center justify-between px-4 flex-shrink-0"
+                style={{
+                    height: 44,
+                    borderBottom: '1px solid rgba(207,201,194,0.20)',
+                    background: 'var(--bg-dark)',
+                }}
+            >
                 <div className="flex items-center gap-2">
-                    <Bot size={16} className="text-signal" />
-                    <span className="mono-label-lg text-signal">VARUNA.AI TACTICAL COPILOT</span>
+                    <span style={{ fontSize: 14, color: 'var(--signal)' }}>◈</span>
+                    <span
+                        className="font-mono font-bold"
+                        style={{ fontSize: 11, color: 'var(--signal)', letterSpacing: '0.14em' }}
+                    >
+                        VARUNA.AI TACTICAL COPILOT
+                    </span>
+                    {/* Live connectivity dot */}
+                    <div
+                        className="pulse-dot"
+                        style={{ width: 6, height: 6, background: '#7FB069', boxShadow: '0 0 6px #7FB069', marginLeft: 4 }}
+                    />
                 </div>
-                <button onClick={onClose} className="text-text-light hover:text-white transition-colors">
-                    <X size={18} />
+                <button onClick={onClose} style={{ color: 'rgba(207,201,194,0.50)' }} className="hover:text-white transition-colors">
+                    <X size={16} />
                 </button>
             </div>
 
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 font-mono text-sm bg-bg-dark/50" ref={scrollRef}>
+            {/* ── Messages ───────────────────────────────────────────── */}
+            <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 p-4"
+                style={{ background: 'var(--bg-mid)' }}
+            >
                 {messages.map((m, i) => (
-                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 text-[13px] tracking-wide leading-relaxed ${m.role === 'user' ? 'bg-signal/20 border border-signal/30 text-white' : 'bg-bg-dark border border-signal text-signal font-medium'}`}>
-                            {m.role === 'assistant' && <div className="text-[10px] text-white mb-1.5 opacity-80 font-bold">▶ SYSTEM RESPONSE</div>}
+                    <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        {/* Terminal-style role tag */}
+                        <div
+                            className="font-mono mb-1"
+                            style={{
+                                fontSize: 9,
+                                letterSpacing: '0.18em',
+                                color: m.role === 'user' ? 'rgba(207,201,194,0.50)' : '#7FB069',
+                            }}
+                        >
+                            {m.role === 'user' ? '[OPERATOR]' : '[COPILOT]'}
+                        </div>
+
+                        {/* Message bubble */}
+                        <div
+                            className="max-w-[88%] px-3 py-2.5 font-mono leading-relaxed"
+                            style={{
+                                fontSize: 12,
+                                letterSpacing: '0.02em',
+                                ...(m.role === 'user'
+                                    ? {
+                                        background: 'rgba(207,201,194,0.10)',
+                                        border: '1px solid rgba(207,201,194,0.25)',
+                                        color: '#fff',
+                                    }
+                                    : hasRiskContent(m.content)
+                                    ? {
+                                        // Risk block card — red border + tinted background
+                                        background: 'rgba(255,87,87,0.06)',
+                                        border: '1px solid rgba(255,87,87,0.30)',
+                                        borderLeft: '3px solid #FF5757',
+                                        color: '#cfc9c2',
+                                    }
+                                    : {
+                                        background: 'var(--bg-dark)',
+                                        border: '1px solid rgba(207,201,194,0.20)',
+                                        color: '#cfc9c2',
+                                    }
+                                ),
+                            }}
+                        >
                             {m.content}
                         </div>
                     </div>
                 ))}
+
+                {/* Three-dot thought animation */}
                 {isTyping && (
-                    <div className="flex justify-start">
-                        <div className="bg-bg-dark border border-signal/50 text-signal/80 p-3 text-xs w-28 flex items-center gap-2">
-                            <span className="animate-pulse">ANALYZING</span>
+                    <div className="flex flex-col items-start">
+                        <div className="font-mono mb-1" style={{ fontSize: 9, letterSpacing: '0.18em', color: '#7FB069' }}>
+                            [COPILOT]
+                        </div>
+                        <div
+                            className="px-4 py-3 flex items-center gap-2"
+                            style={{
+                                background: 'var(--bg-dark)',
+                                border: '1px solid rgba(207,201,194,0.20)',
+                            }}
+                        >
+                            {[0, 1, 2].map(idx => (
+                                <div
+                                    key={idx}
+                                    style={{
+                                        width: 6, height: 6,
+                                        background: 'var(--signal)',
+                                        borderRadius: '50%',
+                                        animation: `alert-pulse 1.2s ease-in-out ${idx * 0.2}s infinite`,
+                                    }}
+                                />
+                            ))}
+                            <span
+                                className="font-mono ml-1"
+                                style={{ fontSize: 9, color: 'rgba(207,201,194,0.45)', letterSpacing: '0.12em' }}
+                            >
+                                ANALYZING
+                            </span>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Input Area */}
-            <div className="p-3 border-t border-signal/30 bg-bg-dark flex gap-2">
+            {/* ── Suggestion chips ───────────────────────────────────── */}
+            <div
+                className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1 flex-shrink-0"
+                style={{ borderTop: '1px solid rgba(207,201,194,0.12)', background: 'var(--bg-dark)' }}
+            >
+                {SUGGESTION_CHIPS.map(chip => (
+                    <button
+                        key={chip}
+                        onClick={() => setInput(chip)}
+                        className="font-mono text-[9px] px-2 py-1 transition-colors"
+                        style={{
+                            background: 'rgba(0,240,255,0.06)',
+                            border: '1px solid rgba(0,240,255,0.18)',
+                            color: 'rgba(0,240,255,0.55)',
+                            letterSpacing: '0.04em',
+                            cursor: 'pointer',
+                        }}
+                        onMouseEnter={e => {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,240,255,0.45)';
+                            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(0,240,255,0.90)';
+                        }}
+                        onMouseLeave={e => {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,240,255,0.18)';
+                            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(0,240,255,0.55)';
+                        }}
+                    >
+                        {chip}
+                    </button>
+                ))}
+            </div>
+
+            {/* ── Input ──────────────────────────────────────────────── */}
+            <div
+                className="flex gap-2 p-3 flex-shrink-0"
+                style={{
+                    borderTop: '1px solid rgba(207,201,194,0.18)',
+                    background: 'var(--bg-dark)',
+                }}
+            >
                 <input
                     type="text"
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSend()}
-                    className="flex-1 bg-black/50 border border-border-light px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-signal/50 placeholder:text-text-light/30 tracking-tight"
                     placeholder="ENTER QUERY..."
+                    className="flex-1 bg-black/40 px-3 py-2 font-mono text-sm focus:outline-none"
+                    style={{
+                        border: '1px solid rgba(207,201,194,0.18)',
+                        color: '#fff',
+                        fontSize: 12,
+                        letterSpacing: '0.03em',
+                    }}
+                    onFocus={e => (e.currentTarget.style.borderColor = 'rgba(0,240,255,0.45)')}
+                    onBlur={e => (e.currentTarget.style.borderColor = 'rgba(207,201,194,0.18)')}
                 />
                 <button
                     onClick={handleSend}
                     disabled={!input.trim() || isTyping}
-                    className="bg-signal text-bg-dark px-3 flex items-center justify-center font-bold mono-label disabled:opacity-30 transition-opacity hover:bg-opacity-90"
+                    className="px-4 flex items-center justify-center transition-opacity disabled:opacity-30"
+                    style={{
+                        background: 'var(--signal)',
+                        color: 'var(--bg-dark)',
+                    }}
                 >
-                    <Send size={16} />
+                    <Send size={15} />
                 </button>
             </div>
         </div>

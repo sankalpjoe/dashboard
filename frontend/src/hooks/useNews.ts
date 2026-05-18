@@ -10,10 +10,17 @@ export function useIndiaNews() {
     useEffect(() => {
         let active = true;
         const poll = async () => {
-            const data = await fetchIndiaNews();
-            if (!active) return;
-            setNews(data);
-            setLoading(false);
+            console.log('[useIndiaNews] Fetching news...');
+            try {
+                const data = await fetchIndiaNews();
+                if (!active) return;
+                console.log('[useIndiaNews] Received news:', data.length);
+                setNews(data);
+                setLoading(false);
+            } catch (err) {
+                console.error('[useIndiaNews] Fetch failed:', err);
+                if (active) setLoading(false);
+            }
         };
         void poll();
         const t = setInterval(poll, POLL_MS);

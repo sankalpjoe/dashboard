@@ -15,7 +15,7 @@
     "dev:api": "tsx src-tauri/sidecar/local-api-server.mjs",
     "build": "tsc && vite build",
     "build:sidecar-sebuf": "node scripts/build-sidecar-sebuf.mjs",
-    "build:desktop": "node scripts/build-sidecar-sebuf.mjs && tsc && vite build",
+    "build:desktop": "node scripts/build-sidecar-sebuf.mjs && cd frontend && npm run build",
     "build:full": "cross-env-shell VITE_VARIANT=full \"tsc && vite build\"",
     "build:tech": "cross-env-shell VITE_VARIANT=tech \"tsc && vite build\"",
     "build:finance": "cross-env-shell VITE_VARIANT=finance \"tsc && vite build\"",

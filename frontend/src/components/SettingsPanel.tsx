@@ -17,7 +17,7 @@ const SettingsPanel = ({ activeLayers, setActiveLayers }: SettingsPanelProps) =>
     };
 
     return (
-        <div className="h-full bg-bg-light grain-overlay flex flex-col" style={{ width: 360 }}>
+        <div className="h-full bg-bg-mid flex flex-col" style={{ width: 360 }}>
             {/* Header */}
             <div className="h-12 border-b border-border-light flex items-center px-4 bg-bg-dark">
                 <Layers size={18} className="text-signal mr-3" />

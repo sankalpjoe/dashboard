@@ -42,6 +42,8 @@ export interface Vessel {
     isMilitary: boolean;
     isDark: boolean;
     lastUpdate: number;
+    vesselClass?: string;   // e.g. 'Nimitz-class CVN'
+    description?: string;   // one-line context blurb
 }
 
 const INDIA_MARITIME_BOXES: [[number, number], [number, number]][] = [

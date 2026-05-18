@@ -1,80 +1,96 @@
 import { useState, useEffect } from "react";
-import { useIndiaNews } from "@/hooks/useNews";
-import { Activity } from "lucide-react";
 
-const navItems = ["LIVE INTEL", "TIMELINE", "ASSETS", "INTEL", "SETTINGS"];
+const NAV_ITEMS = [
+  { id: 'INTEL', label: 'Intel Brief' },
+  { id: 'OSINT', label: 'OSINT'       },
+] as const;
 
-const NavBar = ({ activeTab, setActiveTab }: { activeTab: string; setActiveTab: (t: string) => void }) => {
-  const [time, setTime] = useState("");
-  const { news } = useIndiaNews();
-
-  // Count critical (S1) and high (S2) alerts
-  const criticalCount = news.filter(n => n.severity === 1).length;
-  const highCount = news.filter(n => n.severity === 2).length;
-  const totalAlerts = criticalCount + highCount;
+const NavBar = ({
+  activeTab,
+  setActiveTab,
+}: {
+  activeTab: string;
+  setActiveTab: (t: string) => void;
+}) => {
+  const [time, setTime] = useState({ ist: '--:--:--', zulu: '--:--:--Z' });
 
   useEffect(() => {
     const update = () => {
-      const now = new Date().toLocaleTimeString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
+      const now = new Date();
+      setTime({
+        ist: now.toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+        }),
+        zulu: now.toISOString().slice(11, 19) + 'Z',
       });
-      setTime(now);
     };
     update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
   }, []);
 
   return (
-    <div
-      className="w-full flex items-center justify-between px-6 bg-bg-light"
-      style={{
-        height: "var(--nav-h)",
-        borderBottom: "1px solid rgba(26,26,24,0.12)",
-      }}
-    >
-      {/* Left: Logo */}
-      <div className="flex items-center gap-4">
-        <img src="/icon.ico" alt="DashINT Logo" className="w-10 h-10 object-contain drop-shadow-md" />
-        <span className="font-display text-bg-dark text-2xl tracking-tight mt-1">
-          DashINT
+    <div style={{
+      height: 'var(--nav-h)',
+      background: '#ffffff',
+      borderBottom: '1px solid #e5e5e5',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 20px',
+      flexShrink: 0,
+    }}>
+      {/* Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 14, fontWeight: 700, color: '#000', letterSpacing: '0.06em' }}>
+          DASHINT
+        </span>
+        <div style={{ width: 1, height: 20, background: '#e5e5e5', margin: '0 6px' }} />
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#666', letterSpacing: '0.08em' }}>
+          INDIA CRISIS MONITOR
         </span>
       </div>
 
-      {/* Center: Nav links */}
-      <div className="flex items-center gap-8">
-        {navItems.map((item) => (
-          <button
-            key={item}
-            onClick={() => setActiveTab(item)}
-            className={`nav-link mono-label-lg cursor-pointer transition-none ${activeTab === item ? "text-bg-dark" : "text-bg-dark/50"
-              }`}
-          >
-            {item}
-          </button>
-        ))}
+      {/* Nav tabs */}
+      <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
+        {NAV_ITEMS.map(({ id, label }) => {
+          const isActive = activeTab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              style={{
+                border: 'none',
+                borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
+                background: 'transparent',
+                color: isActive ? '#000' : '#444',
+                fontFamily: 'IBM Plex Mono, monospace',
+                fontSize: 11,
+                fontWeight: isActive ? 700 : 400,
+                letterSpacing: '0.10em',
+                cursor: 'pointer',
+                padding: '0 20px',
+                transition: 'color 0.12s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {label.toUpperCase()}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Right: Clock + Status */}
-      <div className="flex items-center gap-5">
-        {totalAlerts > 0 ? (
-          <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-2.5 py-1 rounded">
-            <Activity size={12} className="text-red-500 animate-pulse" />
-            <span className="mono-label text-red-500 font-bold">{totalAlerts} ACTIVE ALERTS</span>
-          </div>
-        ) : (
-          <span className="mono-label text-bg-dark/60">FEEDS: {news.length || 247}</span>
-        )}
-        <span className="font-mono text-xs text-bg-dark tracking-wider">
-          {time} IST
-        </span>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-green-500 alert-pulse" />
-          <span className="mono-label text-bg-dark/60">LIVE</span>
+      {/* Right: live + clock */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="pulse-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />
+          <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#16a34a', letterSpacing: '0.12em' }}>LIVE</span>
+        </div>
+        <div style={{ width: 1, height: 20, background: '#e5e5e5' }} />
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: '#000', letterSpacing: '0.06em' }}>{time.zulu}</div>
+          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: '#666', letterSpacing: '0.08em' }}>{time.ist} IST</div>
         </div>
       </div>
     </div>

@@ -15,6 +15,45 @@ import { CHOKEPOINTS, CHOKEPOINT_STATUS_COLORS, CHOKEPOINT_LINE_COLORS } from "@
 import { WORLD_LEADERS, WorldLeader } from "@/config/world-leaders";
 import { Location } from "@/hooks/useRoutePlanner";
 
+// ─── ICAO airline prefix → operator name ──────────────────────────────────────
+const ICAO_AIRLINES: Record<string, string> = {
+  // India
+  AIC: 'Air India', IGO: 'IndiGo', SEJ: 'SpiceJet', GOW: 'GoAir',
+  AXB: 'Air Asia India', VTI: 'Vistara', BSG: 'Blue Dart', FDB: 'flydubai',
+  // India military
+  IAF: 'Indian Air Force', IND: 'IAF', IAM: 'IAF Military',
+  // Pakistan
+  PIA: 'Pakistan Int\'l Airlines', PAF: 'Pakistan Air Force',
+  // US military
+  RCH: 'USAF AMC', AIO: 'US Army', BRK: 'US Navy', CPT: 'USAF', DCM: 'USMC',
+  CNV: 'US Navy', RRR: 'USAF AFSOC', SUI: 'US Navy VQ', EVS: 'US Army Aviation',
+  // Civilian international
+  UAE: 'Emirates', ETD: 'Etihad', QTR: 'Qatar Airways', THY: 'Turkish Airlines',
+  SIA: 'Singapore Airlines', BAW: 'British Airways', DLH: 'Lufthansa',
+  AFR: 'Air France', KLM: 'KLM Royal Dutch', SVA: 'Saudia', FDX: 'FedEx',
+  UPS: 'UPS Airlines', CLX: 'Cargolux', MSR: 'EgyptAir', ETH: 'Ethiopian Airlines',
+  KAL: 'Korean Air', CPA: 'Cathay Pacific', ANA: 'All Nippon Airways',
+  VTE: 'Vietnam Airlines', MAS: 'Malaysia Airlines',
+};
+
+function decodeCallsign(callsign?: string): { airline: string | null; flight: string } {
+  if (!callsign) return { airline: null, flight: '—' };
+  const cs = callsign.trim().toUpperCase();
+  const prefix = cs.replace(/[0-9].*/g, '').slice(0, 3);
+  const airline = ICAO_AIRLINES[prefix] ?? null;
+  return { airline, flight: cs };
+}
+
+// ─── Squawk code interpretation ────────────────────────────────────────────────
+const SQUAWK_LABELS: Record<string, string> = {
+  '7500': '⚠ HIJACK',
+  '7600': '⚠ RADIO FAIL',
+  '7700': '⚠ EMERGENCY',
+  '1200': 'VFR',
+  '2000': 'IFR Oceanic',
+  '0000': 'Not set',
+};
+
 // ─── GPS Jam Zones (approximate known regions) ─────────────────────────────────
 const GPS_JAM_ZONES = [
   { lat: 32.0, lon: 34.8, weight: 9, label: 'Israel / Gaza' },
@@ -30,36 +69,121 @@ const GPS_JAM_ZONES = [
   { lat: 30.0, lon: 32.3, weight: 4, label: 'Suez Approaches' },
 ];
 // ─── Static config ─────────────────────────────────────────────────────────────
+// IMPORTANT: keywords here must be SPECIFIC city/event phrases, NOT broad country
+// adjectives like 'iran','iranian','pakistan' — those match India-related articles
+// that merely reference those countries and cause wrong map placement.
 
 const INTEL_LOCATIONS = [
-  { keywords: ['sri lanka', 'colombo'], lat: 7.8731, lon: 80.7718, code: 'LKA' },
-  { keywords: ['isfahan'], lat: 32.6539, lon: 51.6660, code: 'IRN' },
-  { keywords: ['tehran'], lat: 35.6892, lon: 51.3890, code: 'IRN' },
-  { keywords: ['iran', 'iranian'], lat: 32.4279, lon: 53.6880, code: 'IRN' },
-  { keywords: ['kabul'], lat: 34.5553, lon: 69.2075, code: 'AFG' },
+  { keywords: ['srinagar', 'kashmir', 'loc violation', 'ceasefire violation'], lat: 34.0837, lon: 74.7973, code: 'LOC' },
+  { keywords: ['doklam', 'galwan', 'lac standoff', 'depsang', 'arunachal border', 'aksai chin', 'tawang'], lat: 35.8617, lon: 104.1954, code: 'CHN' },
+  { keywords: ['sri lanka', 'colombo', 'jaffna'], lat: 7.8731, lon: 80.7718, code: 'LKA' },
+  { keywords: ['kabul', 'kandahar', 'jalalabad', 'taliban'], lat: 34.5553, lon: 69.2075, code: 'AFG' },
+  { keywords: ['islamabad', 'karachi', 'lahore', 'rawalpindi', 'peshawar'], lat: 33.6844, lon: 73.0479, code: 'PAK' },
+  { keywords: ['dhaka', 'bangladesh', 'rohingya', 'cox bazar'], lat: 23.8103, lon: 90.4125, code: 'BGD' },
+  { keywords: ['myanmar', 'naypyidaw', 'manipur border', 'moreh'], lat: 21.9162, lon: 95.9560, code: 'MMR' },
+  { keywords: ['nepal', 'kathmandu', 'pokhara'], lat: 27.7172, lon: 85.3240, code: 'NPL' },
+  { keywords: ['maldives', 'male', 'india out'], lat: 4.1755, lon: 73.5093, code: 'MDV' },
+  { keywords: ['houthi', 'red sea', 'bab-el-mandeb', 'yemen'], lat: 15.5527, lon: 48.5164, code: 'YEM' },
+  { keywords: ['iran', 'tehran', 'isfahan', 'hormuz'], lat: 32.6539, lon: 51.6660, code: 'IRN' },
+  { keywords: ['gaza', 'israel', 'west bank'], lat: 31.5, lon: 34.7, code: 'ISR' },
   { keywords: ['afghanistan', 'taliban'], lat: 33.9391, lon: 67.7099, code: 'AFG' },
-  { keywords: ['islamabad'], lat: 33.6844, lon: 73.0479, code: 'PAK' },
-  { keywords: ['pakistan', 'loc'], lat: 30.3753, lon: 69.3451, code: 'PAK' },
-  { keywords: ['myanmar', 'junta'], lat: 21.9162, lon: 95.9560, code: 'MMR' },
-  { keywords: ['yemen', 'houthi', 'red sea', 'gulf of aden'], lat: 15.5527, lon: 48.5164, code: 'YEM' },
-  { keywords: ['syria', 'damascus'], lat: 34.8021, lon: 38.9968, code: 'SYR' },
-  { keywords: ['sudan'], lat: 12.8628, lon: 30.2176, code: 'SDN' },
-  { keywords: ['china', 'lac', 'beijing'], lat: 35.8617, lon: 104.1954, code: 'CHN' },
 ];
 
 const CONFLICT_ZONE_CONFIG: Record<string, {
   alertLevel: 'HIGH' | 'ELEVATED' | 'MONITOR';
   label: string; startDate?: string; casualties?: string; displaced?: string; status?: string;
+  wikiSlug?: string;
 }> = {
-  PAK: { alertLevel: 'HIGH', label: 'Pakistan — Active Tension', startDate: '1947', casualties: '~50,000+', displaced: '700,000+', status: 'High military mobilization along LoC.' },
-  CHN: { alertLevel: 'ELEVATED', label: 'China — LAC Standoff', startDate: '2020', casualties: 'Undisclosed', displaced: 'None', status: 'Ongoing infrastructure buildup; unresolved friction points.' },
-  MMR: { alertLevel: 'ELEVATED', label: 'Myanmar — Border Instability', startDate: '2021', casualties: '50,000+', displaced: '2.6 Million', status: 'Junta vs Rebel forces. High cross-border refugee flow.' },
-  AFG: { alertLevel: 'HIGH', label: 'Afghanistan — Taliban Border', startDate: '2021', casualties: 'Unknown', displaced: '3.5 Million+', status: 'Border skirmishes. Extreme economic and humanitarian crisis.' },
-  IRN: { alertLevel: 'HIGH', label: 'Iran — Active Conflict', startDate: '2024', casualties: 'Escalating', displaced: 'Unknown', status: 'Direct military confrontation involving ballistic missiles and proxy groups.' },
-  IRQ: { alertLevel: 'ELEVATED', label: 'Iraq — Instability', startDate: '2003', casualties: '1M+', displaced: '1.2 Million', status: 'Proxy militia operations and continued insurgency.' },
-  YEM: { alertLevel: 'HIGH', label: 'Yemen — Active Conflict', startDate: '2014', casualties: '377,000+', displaced: '4.5 Million', status: 'Houthi militant strikes on maritime shipping lanes in Red Sea.' },
-  SYR: { alertLevel: 'ELEVATED', label: 'Syria — Ongoing', startDate: '2011', casualties: '600,000+', displaced: '13 Million', status: 'Fragmented territorial control with ongoing foreign interventions.' },
-  SDN: { alertLevel: 'ELEVATED', label: 'Sudan — Civil War', startDate: '2023', casualties: '15,000+', displaced: '8.5 Million', status: 'SAF vs RSF urban combat. Imminent famine warning.' },
+  PAK: {
+    alertLevel: 'HIGH',
+    label: 'India–Pakistan — Active Military Confrontation',
+    startDate: 'May 2025',
+    casualties: 'Escalating — classified',
+    displaced: 'Civilian evacuations LoC sector',
+    status: 'Post-Operation Sindoor: India conducted precision strikes on militant infrastructure in Pakistan. LoC remains highly volatile. Cross-border drone/artillery incidents ongoing.',
+    wikiSlug: '2025_India%E2%80%93Pakistan_conflict',
+  },
+  CHN: {
+    alertLevel: 'ELEVATED',
+    label: 'China — LAC Friction Zones',
+    startDate: '2020',
+    casualties: 'Undisclosed',
+    displaced: 'None',
+    status: 'PLA infrastructure buildup in Depsang, Demchok. Patrol friction continues. Tawang and Arunachal remain flashpoints.',
+    wikiSlug: 'Sino-Indian_War',
+  },
+  MMR: {
+    alertLevel: 'ELEVATED',
+    label: 'Myanmar — Civil War / Border Instability',
+    startDate: '2021',
+    casualties: '60,000+',
+    displaced: '3.2 Million',
+    status: 'Refugee flow into Mizoram/Manipur. India deployed CAPF along Moreh border. Border fencing accelerated.',
+    wikiSlug: 'Myanmar_civil_war_(2021%E2%80%93present)',
+  },
+  AFG: {
+    alertLevel: 'HIGH',
+    label: 'Afghanistan — Taliban / Border Threat',
+    startDate: '2021',
+    casualties: 'Classified',
+    displaced: '4.2 Million+',
+    status: 'TTP active in border regions. Cross-border militancy channels into India remain active.',
+    wikiSlug: 'Islamic_Emirate_of_Afghanistan',
+  },
+  BGD: {
+    alertLevel: 'MONITOR',
+    label: 'Bangladesh — Border & Migration',
+    startDate: '2024',
+    casualties: 'Unknown',
+    displaced: 'Undetermined',
+    status: 'Border fencing disputes. Rohingya crisis strain. Illegal migration and human trafficking along India-Bangladesh border.',
+    wikiSlug: 'Bangladesh',
+  },
+  NPL: {
+    alertLevel: 'MONITOR',
+    label: 'Nepal — Border Friction',
+    startDate: '2020',
+    casualties: 'None',
+    displaced: 'None',
+    status: 'Kalapani-Limpiyadhura border dispute. Chinese influence in Nepalese politics. India-Nepal trade route blockades.',
+    wikiSlug: 'Nepal',
+  },
+  LKA: {
+    alertLevel: 'MONITOR',
+    label: 'Sri Lanka — Strategic Concerns',
+    startDate: '2022',
+    casualties: 'None',
+    displaced: 'None',
+    status: "Chinese research vessel monitoring. Tamil Nadu fishing disputes. Economic recovery post-default. India's southern maritime neighbor.",
+    wikiSlug: 'Sri_Lanka',
+  },
+  MDV: {
+    alertLevel: 'ELEVATED',
+    label: 'Maldives — India-China Competition',
+    startDate: '2023',
+    casualties: 'None',
+    displaced: 'None',
+    status: '"India Out" campaign. Chinese port/infrastructure deals. Indian military personnel withdrawal. Geostrategic Indian Ocean location.',
+    wikiSlug: 'Maldives',
+  },
+  IRN: {
+    alertLevel: 'ELEVATED',
+    label: 'Iran — Regional Proxy / Hormuz',
+    startDate: '2024',
+    casualties: 'Escalating',
+    displaced: 'Unknown',
+    status: "Iran-Israel tensions. Strait of Hormuz disruptions affect India's energy imports. Chabahar port development under watch.",
+    wikiSlug: 'Iran%E2%80%93Israel_proxy_conflict',
+  },
+  YEM: {
+    alertLevel: 'HIGH',
+    label: 'Yemen — Houthi Red Sea Campaign',
+    startDate: '2014',
+    casualties: '377,000+',
+    displaced: '4.5 Million',
+    status: 'Houthi attacks on Red Sea shipping. Indian Navy escort missions in Gulf of Aden. Trade route disruption impacts India-EU commerce.',
+    wikiSlug: 'Red_Sea_crisis_(2023%E2%80%93present)',
+  },
 };
 
 const ALERT_FILLS: Record<string, [number, number, number, number]> = {
@@ -109,7 +233,8 @@ const ROUTE_WIDTHS = [5, 3, 3];
 const AIRPLANE_SVG = `data:image/svg+xml;charset=utf-8,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='white'%3E%3Cpath d='M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'/%3E%3C/svg%3E`;
 const PIN_GREEN = `data:image/svg+xml;charset=utf-8,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='%2310b981'%3E%3Cpath d='M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z'/%3E%3C/svg%3E`;
 const PIN_RED = `data:image/svg+xml;charset=utf-8,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='%23f04c35'%3E%3Cpath d='M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z'/%3E%3C/svg%3E`;
-const SHIP_SVG = `data:image/svg+xml;charset=utf-8,%3Csvg width='24' height='24' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='white'%3E%3Cpath d='M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.42-.6-.5L20 10.93V4.01c0-1.1-.9-2-2-2h-2.15c-.24-.59-.82-1.01-1.51-1.01s-1.27.42-1.51 1.01H10.66c-.24-.59-.82-1.01-1.51-1.01s-1.27.42-1.51 1.01H5.48c-1.1 0-2 .9-2 2v6.92l-1.28.43c-.26.08-.48.26-.6.5s-.14.52-.06.78L3.95 19zM6 4.99h3v5.94l-3 1.01V4.99zm5 0h2v4.61l-2-.67V4.99zm4 0h3v6.95l-3-1.01V4.99z'/%3E%3C/svg%3E`;
+// Clean AIS-style vessel — teardrop pointing up (bow), flat stern
+const SHIP_SVG = `data:image/svg+xml;charset=utf-8,%3Csvg width='20' height='26' viewBox='0 0 20 26' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolygon points='10,1 19,22 10,18 1,22' fill='white' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E`;
 
 const ICON_SIZE_24 = { width: 24, height: 24, anchorY: 24 };
 const ICON_SIZE_32 = { width: 32, height: 32, anchorY: 32 };
@@ -222,7 +347,7 @@ const MapPanel = ({
 }: MapPanelProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapInstance | null>(null);
-  const overlayRef = useRef<MapboxOverlay | null>(null);
+  const overlayRef = useRef<any | null>(null);
   const pulseLayerRef = useRef<ScatterplotLayer | null>(null);
   const staticLayersRef = useRef<any[]>([]);
 
@@ -232,28 +357,33 @@ const MapPanel = ({
   const [hoverInfo, setHoverInfo] = useState<any>(null);
 
   // Phase 4 settings
-  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite'>('dark');
+  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite'>('satellite');
   const [isGlobe, setIsGlobe] = useState(false);
+  const [mapFilter, setMapFilter] = useState<'none' | 'nv' | 'ir'>('none');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleHover = useCallback((info: any) => setHoverInfo(info), []);
 
-  // ── World GeoJSON ──────────────────────────────────────────────────────────
+  // World GeoJSON ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson')
       .then(r => r.json())
       .then(data => setWorldGeoJSON({
         type: 'FeatureCollection',
         features: data.features
-          .filter((f: any) => f.properties?.ISO_A3 in CONFLICT_ZONE_CONFIG)
-          .map((f: any) => ({
-            ...f,
-            properties: { ...f.properties, ...CONFLICT_ZONE_CONFIG[f.properties.ISO_A3] },
-          })),
+          .filter((f: any) => f.properties?.ISO_A3 in CONFLICT_ZONE_CONFIG || f.properties?.ISO_A3_EH in CONFLICT_ZONE_CONFIG)
+          .map((f: any) => {
+            const iso = f.properties?.ISO_A3 in CONFLICT_ZONE_CONFIG ? f.properties.ISO_A3 : f.properties?.ISO_A3_EH;
+            return {
+              ...f,
+              properties: { ...f.properties, _iso: iso, ...CONFLICT_ZONE_CONFIG[iso] },
+            };
+          }),
       }))
       .catch(console.error);
   }, []);
 
-  // ── Live data ──────────────────────────────────────────────────────────────
+  // Live data ──────────────────────────────────────────────────────────────
   const { flights } = useIndiaFlights();
   const { vessels } = useIndiaShips();
   const { usniVessels } = useUSNIShips();
@@ -330,7 +460,7 @@ const MapPanel = ({
       updateTriggers: { getRadius: [scale], getLineColor: [opacity] },
     });
     pulseLayerRef.current = pulseRings;
-    overlayRef.current.setProps({ layers: [...staticLayersRef.current, pulseRings] });
+    overlayRef.current?.setProps({ layers: [...staticLayersRef.current, pulseRings] });
   }, [pulsePhase, mapReady, activeLayers]);
 
   // ── Map init ───────────────────────────────────────────────────────────────
@@ -375,6 +505,16 @@ const MapPanel = ({
       getFillColor: (d: any) => ALERT_FILLS[d.properties.alertLevel] ?? [51, 51, 51, 140],
       getLineColor: (d: any) => ALERT_LINES[d.properties.alertLevel] ?? [102, 102, 102, 230],
       lineWidthMinPixels: 1.5, pickable: true, onHover: handleHover,
+      onClick: (info: any) => {
+        if (!info.object) return;
+        const slug = info.object.properties?.wikiSlug;
+        const name = info.object.properties?.NAME_EN || info.object.properties?.NAME || info.object.properties?.label;
+        const url = slug
+          ? `https://en.wikipedia.org/wiki/${slug}`
+          : `https://en.wikipedia.org/wiki/${encodeURIComponent(String(name ?? '').replace(/\s/g, '_'))}`;
+        window.open(url, '_blank', 'noopener');
+      },
+      getCursor: () => 'pointer',
     });
 
     // 2. Sub-national zones
@@ -616,6 +756,8 @@ const MapPanel = ({
       getSize: 32,
     });
 
+    // 16b. News markers → replaced by HTML teardrop pins (see separate useEffect)
+
     // 16. World Leader Avatars (Phase 6)
     // First, a background circle so it looks like a clean pin
     const leaderBg = new ScatterplotLayer({
@@ -664,7 +806,7 @@ const MapPanel = ({
       pendingMarkers,
     ];
 
-    overlayRef.current.setProps({
+    overlayRef.current?.setProps({
       layers: [...staticLayersRef.current, pulseLayerRef.current ?? pulseRings],
     });
   }, [
@@ -674,6 +816,7 @@ const MapPanel = ({
     incidents, blockedSegments, origin, destination,
     handleHover, onSelectVessel, onSelectLeader,
   ]);
+
 
   // ── Fit bounds to selected route ───────────────────────────────────────────
   useEffect(() => {
@@ -695,11 +838,37 @@ const MapPanel = ({
     };
   }, [hoverInfo]);
 
+  // ── NV/IR CSS filter strings ───────────────────────────────────────────────
+  const filterStyle: Record<typeof mapFilter, string> = {
+    none: 'none',
+    nv: 'grayscale(1) brightness(0.45) contrast(3) sepia(1) hue-rotate(72deg) saturate(12)',
+    ir: 'sepia(1) saturate(6) hue-rotate(310deg) contrast(1.5) brightness(0.88)',
+  };
+
+  // ── Pre-compute conflict zone config from hovered feature's _iso ──────────
+  const hoveredIso = hoverInfo?.object?.properties?._iso as string | undefined;
+  const hoveredZoneConf = hoveredIso ? CONFLICT_ZONE_CONFIG[hoveredIso] : null;
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col bg-bg-dark relative">
-      <div className="flex-1 relative overflow-hidden">
-        <div ref={mapContainerRef} className="absolute inset-0 deckgl-container" />
+    <div className="flex-1 min-h-0 h-full flex flex-col bg-bg-dark relative">
+      <div className="flex-1 min-h-0 h-full relative overflow-hidden">
+        {/* Map container — filter applied here for NV/IR */}
+        <div
+          ref={mapContainerRef}
+          className="absolute inset-0 deckgl-container transition-all duration-500"
+          style={{ filter: filterStyle[mapFilter] }}
+        />
+        {/* NV/IR green scan-line overlay */}
+        {mapFilter === 'nv' && (
+          <div
+            className="absolute inset-0 pointer-events-none z-10"
+            style={{
+              background: 'repeating-linear-gradient(0deg, rgba(0,255,70,0.04) 0px, rgba(0,255,70,0.04) 1px, transparent 1px, transparent 3px)',
+              mixBlendMode: 'screen',
+            }}
+          />
+        )}
 
         {/* Stats overlay */}
         <div className="absolute top-4 left-4 bg-bg-dark/90 px-3 py-1.5 flex flex-col gap-1 z-10 border border-signal/20">
@@ -729,34 +898,62 @@ const MapPanel = ({
           )}
         </div>
 
-        {/* Glassmorphism Map Options Overlay */}
-        <div className="absolute top-4 right-4 bg-bg-dark/60 backdrop-blur-md border border-signal/30 p-4 shadow-2xl z-50 flex flex-col gap-3 min-w-[220px]">
-          <div className="flex justify-between items-center border-b border-signal/20 pb-2">
-            <span className="mono-label text-signal text-[10px] tracking-wider font-bold">MAP SETTINGS</span>
-          </div>
+        {/* Collapsible Map Settings */}
+        <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-1">
+          <button
+            onClick={() => setSettingsOpen(o => !o)}
+            className="flex items-center gap-1.5 bg-bg-dark/80 backdrop-blur-sm border border-signal/30 px-2.5 py-1.5 hover:bg-signal/20 transition-colors"
+          >
+            <span className="mono-label text-signal text-[9px] font-bold tracking-wider">MAP SETTINGS</span>
+            <span className="font-mono text-[8px] text-signal/60">{settingsOpen ? '▲' : '▼'}</span>
+          </button>
 
-          {/* Map Style */}
-          <div className="flex flex-col gap-2">
-            <span className="mono-label text-text-light/50 text-[9px]">BASEMAP STYLE</span>
-            <div className="flex bg-bg-dark border border-text-light/20 p-0.5">
-              <button onClick={() => setMapStyle('dark')} className={`flex-1 py-1.5 text-[9px] font-mono transition-colors ${mapStyle === 'dark' ? 'bg-signal text-bg-dark font-bold' : 'text-text-light hover:text-white'}`}>DARK</button>
-              <button onClick={() => setMapStyle('satellite')} className={`flex-1 py-1.5 text-[9px] font-mono transition-colors ${mapStyle === 'satellite' ? 'bg-signal text-bg-dark font-bold' : 'text-text-light hover:text-white'}`}>SATELLITE</button>
-            </div>
-          </div>
-
-          {/* Projection */}
-          <div className="flex flex-col gap-2 pt-2 border-t border-text-light/10">
-            <span className="mono-label text-text-light/50 text-[9px]">PROJECTION</span>
-            <button
-              onClick={() => setIsGlobe(!isGlobe)}
-              className="flex justify-between items-center w-full mono-label text-[10px] text-text-light hover:text-white transition-colors cursor-pointer"
-            >
-              <span>3D GLOBE ENGINE</span>
-              <div className={`w-7 h-3.5 flex items-center p-0.5 transition-colors ${isGlobe ? 'bg-signal' : 'bg-bg-mid border border-text-light/30'}`}>
-                <div className={`w-2 h-2 bg-white transition-transform ${isGlobe ? 'translate-x-3.5' : 'translate-x-0'}`} />
+          {settingsOpen && (
+            <div className="bg-bg-dark/90 backdrop-blur-md border border-signal/30 p-3 shadow-2xl flex flex-col gap-3 min-w-[200px]">
+              {/* Basemap */}
+              <div className="flex flex-col gap-1.5">
+                <span className="mono-label text-text-light/50 text-[9px]">BASEMAP</span>
+                <div className="flex bg-bg-dark border border-text-light/20 p-0.5">
+                  <button onClick={() => setMapStyle('dark')} className={`flex-1 py-1.5 text-[9px] font-mono transition-colors ${mapStyle === 'dark' ? 'bg-signal text-text-light font-bold' : 'text-text-light hover:text-white'}`}>DARK</button>
+                  <button onClick={() => setMapStyle('satellite')} className={`flex-1 py-1.5 text-[9px] font-mono transition-colors ${mapStyle === 'satellite' ? 'bg-signal text-text-light font-bold' : 'text-text-light hover:text-white'}`}>SAT</button>
+                </div>
               </div>
-            </button>
-          </div>
+
+              {/* Vision Mode */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-text-light/10">
+                <span className="mono-label text-text-light/50 text-[9px]">VISION MODE</span>
+                <div className="flex bg-bg-dark border border-text-light/20 p-0.5">
+                  {(['none', 'nv', 'ir'] as const).map(m => (
+                    <button key={m} onClick={() => setMapFilter(m)}
+                      className={`flex-1 py-1.5 text-[9px] font-mono transition-colors ${mapFilter === m ? (m === 'nv' ? 'bg-green-600 text-white font-bold' : m === 'ir' ? 'bg-red-700 text-white font-bold' : 'bg-signal text-text-light font-bold') : 'text-text-light hover:text-white'}`}>
+                      {m === 'none' ? 'STD' : m.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <span className="font-mono text-[7.5px] text-text-light/25 tracking-wider">
+                  {mapFilter === 'nv' ? '● NIGHT VISION ACTIVE' : mapFilter === 'ir' ? '● IR THERMAL ACTIVE' : ''}
+                </span>
+              </div>
+
+              {/* Projection */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-text-light/10">
+                <span className="mono-label text-text-light/50 text-[9px]">PROJECTION</span>
+                <button
+                  onClick={() => setIsGlobe(!isGlobe)}
+                  className="flex justify-between items-center w-full mono-label text-[10px] text-text-light hover:text-white transition-colors cursor-pointer"
+                >
+                  <span>3D GLOBE</span>
+                  <div className={`w-7 h-3.5 flex items-center p-0.5 transition-colors ${isGlobe ? 'bg-signal' : 'bg-bg-mid border border-text-light/30'}`}>
+                    <div className={`w-2 h-2 bg-white transition-transform ${isGlobe ? 'translate-x-3.5' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-text-light/10">
+                <span className="font-mono text-[7px] text-text-light/20 tracking-wider">CLICK CONFLICT ZONE → WIKI</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Route legend — shown when multiple routes are drawn */}
@@ -791,10 +988,29 @@ const MapPanel = ({
             className="absolute z-50 pointer-events-none bg-bg-dark border border-signal/50 p-3 shadow-2xl flex flex-col gap-2 min-w-[280px] max-w-[320px]"
             style={tooltipStyle}
           >
-            {hoverInfo.object.headline ? (
+            {/* News item (has headline + numeric severity + city) */}
+            {hoverInfo.object.headline && typeof hoverInfo.object.severity === 'number' ? (
               <>
                 <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
-                  <span className="font-mono text-signal font-bold tracking-tight">LIVE INTEL PLOT // {hoverInfo.object.source}</span>
+                  <span className="font-mono text-signal font-bold tracking-tight">NEWS // {hoverInfo.object.city ?? hoverInfo.object.source}</span>
+                  <span className={`text-[10px] font-mono px-1 border ${hoverInfo.object.severity <= 2 ? 'text-red-400 border-red-400/40' : hoverInfo.object.severity <= 3 ? 'text-amber-400 border-amber-400/40' : 'text-signal/80 border-signal/30'}`}>
+                    SEV {hoverInfo.object.severity}
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono tracking-wide text-white leading-snug">{hoverInfo.object.headline}</div>
+                <div className="flex justify-between pt-2 border-t border-text-light/10 text-[10px] font-mono text-text-light/50">
+                  <span className="flex items-center gap-1">
+                    {hoverInfo.object.langLabel && <span className="text-signal/60">{hoverInfo.object.langLabel}</span>}
+                    <span>{hoverInfo.object.source}</span>
+                  </span>
+                  <span className="text-text-light/30">{hoverInfo.object.time}</span>
+                </div>
+              </>
+            ) : hoverInfo.object.headline && hoverInfo.object.riskLevel ? (
+              /* Live OSINT intel plot */
+              <>
+                <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
+                  <span className="font-mono text-signal font-bold tracking-tight">INTEL PLOT // {hoverInfo.object.source}</span>
                   <span className="text-[10px] font-mono text-signal/80 bg-signal/10 px-1 border border-signal/30">{hoverInfo.object.riskLevel?.toUpperCase()}</span>
                 </div>
                 <div className="text-[11.5px] font-mono tracking-wide text-white leading-snug">{hoverInfo.object.headline}</div>
@@ -802,13 +1018,13 @@ const MapPanel = ({
                   <span>{hoverInfo.object.source}</span><span>{hoverInfo.object.time}</span>
                 </div>
               </>
-            ) : hoverInfo.object.severity != null ? (
+            ) : hoverInfo.object.severity != null && hoverInfo.object.location ? (
               /* Traffic incident tooltip */
               <>
                 <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
                   <span className="font-mono text-signal font-bold tracking-tight">TRAFFIC INCIDENT</span>
                   <span className={`text-[10px] font-mono px-1 border ${hoverInfo.object.severity >= 4 ? 'text-red-400 border-red-400/40 bg-red-950/20' :
-                    hoverInfo.object.severity >= 3 ? 'text-orange-400 border-orange-400/40 bg-orange-950/20' :
+                    hoverInfo.object.severity >= 3 ? 'text-lime-500 border-lime-500/40 bg-lime-950/20' :
                       'text-yellow-400 border-yellow-400/40 bg-yellow-950/20'
                     }`}>SEV {hoverInfo.object.severity}</span>
                 </div>
@@ -824,23 +1040,37 @@ const MapPanel = ({
                 )}
               </>
             ) : hoverInfo.object.callsign ? (
-              <>
-                <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
-                  <span className="font-mono text-signal font-bold tracking-tight">{hoverInfo.object.callsign || 'UNKNOWN FLIGHT'}</span>
-                  <span className="text-[10px] font-mono text-signal/80 bg-signal/10 px-1 border border-signal/30">{hoverInfo.object.isMilitary ? 'MILITARY' : 'CIVILIAN'}</span>
-                </div>
-                <div className="flex flex-col gap-1 text-[11px] font-mono text-silver">
-                  {[['ALTITUDE', hoverInfo.object.altitude ? `${Math.round(hoverInfo.object.altitude)} ft` : 'Unknown'],
-                  ['HEADING', hoverInfo.object.heading ? `${Math.round(hoverInfo.object.heading)}°` : 'Unknown'],
-                  ['SPEED', hoverInfo.object.velocity ? `${Math.round(hoverInfo.object.velocity)} kts` : 'Unknown'],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex gap-2">
-                      <span className="text-text-light/50 w-24">{label}:</span>
-                      <span className="text-white">{value}</span>
+              (() => {
+                const { airline, flight } = decodeCallsign(hoverInfo.object.callsign);
+                const squawkLabel = hoverInfo.object.squawk ? SQUAWK_LABELS[hoverInfo.object.squawk] ?? null : null;
+                const isEmergencySquawk = ['7500','7600','7700'].includes(hoverInfo.object.squawk ?? '');
+                return (
+                  <>
+                    <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
+                      <div className="flex flex-col">
+                        <span className="font-mono text-signal font-bold tracking-tight">{flight}</span>
+                        {airline && <span className="font-mono text-[8.5px] text-text-light/50 tracking-widest mt-0.5">{airline}</span>}
+                      </div>
+                      <span className={`text-[10px] font-mono px-1 border shrink-0 ml-2 ${hoverInfo.object.isEmergency || isEmergencySquawk ? 'text-red-400 border-red-400/40 animate-pulse' : hoverInfo.object.isMilitary ? 'text-amber-400 border-amber-400/40' : 'text-signal/80 border-signal/30'}`}>
+                        {hoverInfo.object.isEmergency || isEmergencySquawk ? 'EMERGENCY' : hoverInfo.object.isMilitary ? 'MILITARY' : 'CIVILIAN'}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </>
+                    <div className="flex flex-col gap-1 text-[10.5px] font-mono text-silver">
+                      {[
+                        ['ALTITUDE', hoverInfo.object.altitude ? `${Math.round(hoverInfo.object.altitude).toLocaleString()} ft` : '—'],
+                        ['HEADING',  hoverInfo.object.heading  ? `${Math.round(hoverInfo.object.heading)}°` : '—'],
+                        ['SPEED',    hoverInfo.object.velocity ? `${Math.round(hoverInfo.object.velocity)} kts` : '—'],
+                        ...(hoverInfo.object.squawk ? [['SQUAWK', `${hoverInfo.object.squawk}${squawkLabel ? ' · ' + squawkLabel : ''}`]] : []),
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex gap-2">
+                          <span className="text-text-light/50 w-20">{label}:</span>
+                          <span className={`${isEmergencySquawk && label === 'SQUAWK' ? 'text-red-400 font-bold' : 'text-white'}`}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()
             ) : hoverInfo.object.type && ['nuclear', 'base', 'spaceport', 'cable', 'pipeline', 'datacenter'].includes(hoverInfo.object.type) ? (
               <>
                 <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
@@ -867,21 +1097,29 @@ const MapPanel = ({
               /* USNI / AIS Ship tooltip */
               <>
                 <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
-                  <span className="font-mono text-signal font-bold tracking-tight">{hoverInfo.object.name || `MMSI: ${hoverInfo.object.mmsi}`}</span>
-                  <span className={`text-[10px] font-mono px-1 border ${hoverInfo.object.isMilitary ? 'text-orange-400 border-orange-400/40 bg-orange-950/20' : 'text-signal/80 border-signal/30 bg-signal/10'}`}>
+                  <span className="font-mono text-signal font-bold tracking-tight text-[10.5px] leading-snug">{hoverInfo.object.name || `MMSI: ${hoverInfo.object.mmsi}`}</span>
+                  <span className={`text-[10px] font-mono px-1 border shrink-0 ml-2 ${hoverInfo.object.isMilitary ? 'text-amber-400 border-amber-400/40 bg-amber-950/20' : 'text-signal/80 border-signal/30 bg-signal/10'}`}>
                     {hoverInfo.object.isMilitary ? 'MILITARY' : 'CIVILIAN'}
                   </span>
                 </div>
-                <div className="text-[11.5px] font-mono text-white uppercase">{hoverInfo.object.shipClass || 'VESSEL'}</div>
-                <div className="flex flex-col gap-1 text-[11px] font-mono text-silver pt-2 mt-1 border-t border-text-light/10">
+                {hoverInfo.object.vesselClass && (
+                  <div className="text-[9px] font-mono text-text-light/60 uppercase tracking-widest">{hoverInfo.object.vesselClass}</div>
+                )}
+                {hoverInfo.object.description && (
+                  <div className="mt-1.5 text-[9.5px] font-mono text-white/80 leading-snug">{hoverInfo.object.description}</div>
+                )}
+                <div className="flex flex-col gap-1 text-[10.5px] font-mono text-silver pt-2 mt-1 border-t border-text-light/10">
                   {hoverInfo.object.destination && (
-                    <div className="flex gap-2"><span className="text-text-light/50 w-24">DEST:</span><span className="text-white">{hoverInfo.object.destination}</span></div>
+                    <div className="flex gap-2"><span className="text-text-light/50 w-20">DEST:</span><span className="text-white">{hoverInfo.object.destination}</span></div>
                   )}
                   {hoverInfo.object.navStatusLabel && (
-                    <div className="flex gap-2"><span className="text-text-light/50 w-24">STATUS:</span><span className="text-white">{hoverInfo.object.navStatusLabel}</span></div>
+                    <div className="flex gap-2"><span className="text-text-light/50 w-20">STATUS:</span><span className="text-white">{hoverInfo.object.navStatusLabel}</span></div>
                   )}
                   {hoverInfo.object.speedKnots != null && (
-                    <div className="flex gap-2"><span className="text-text-light/50 w-24">SPEED:</span><span className="text-white">{hoverInfo.object.speedKnots} kts</span></div>
+                    <div className="flex gap-2"><span className="text-text-light/50 w-20">SPEED:</span><span className="text-white">{hoverInfo.object.speedKnots} kts</span></div>
+                  )}
+                  {hoverInfo.object.mmsi > 0 && (
+                    <div className="flex gap-2"><span className="text-text-light/50 w-20">MMSI:</span><span className="text-white/60">{hoverInfo.object.mmsi}</span></div>
                   )}
                 </div>
               </>
@@ -899,27 +1137,72 @@ const MapPanel = ({
                   <span className="text-text-light/50">LOC:</span> {hoverInfo.object.lastKnownLocation}
                 </div>
               </>
-            ) : (
+            ) : hoverInfo.object.name && hoverInfo.object.alertLevel && !hoverInfo.object.properties ? (
+              /* India sub-national zone (ScatterplotLayer — raw object, no .properties) */
               <>
                 <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
-                  <span className="font-mono text-signal font-bold tracking-tight">{hoverInfo.object.properties?.label ?? hoverInfo.object.properties?.name ?? 'UNKNOWN ZONE'}</span>
-                  <span className="text-[10px] font-mono text-signal/80 bg-signal/10 px-1 border border-signal/30">{hoverInfo.object.properties?.alertLevel ?? 'ACTIVE'}</span>
+                  <span className="font-mono text-signal font-bold tracking-tight">{hoverInfo.object.name}</span>
+                  <span className={`text-[10px] font-mono px-1 border ${hoverInfo.object.alertLevel === 'HIGH' ? 'text-red-400 border-red-400/40' : 'text-amber-400 border-amber-400/40'}`}>
+                    {hoverInfo.object.alertLevel}
+                  </span>
                 </div>
-                <div className="flex flex-col gap-1 text-[11px] font-mono text-silver">
-                  {[['START DATE', hoverInfo.object.properties?.startDate ?? 'ACTIVE'],
-                  ['CASUALTIES', hoverInfo.object.properties?.casualties ?? '—'],
-                  ].map(([l, v]) => (
-                    <div key={l} className="flex gap-2"><span className="text-text-light/50 w-24">{l}:</span><span className="text-white">{v}</span></div>
-                  ))}
-                </div>
-                <div className="pt-2 border-t border-text-light/10 text-[10px] font-mono text-white leading-tight">{hoverInfo.object.properties?.status ?? 'Area remains highly destabilized.'}</div>
+                <div className="pt-1 text-[10px] font-mono text-white leading-snug">{hoverInfo.object.status}</div>
               </>
+            ) : hoverInfo.object.label && hoverInfo.object.type ? (
+              /* INDIA_MARKERS / Static hotspots */
+              <>
+                <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
+                  <span className="font-mono text-signal font-bold tracking-tight">STRATEGIC HOTSPOT</span>
+                  <span className={`text-[10px] font-mono px-1 border ${hoverInfo.object.type === 'alert' ? 'text-red-400 border-red-400/40 bg-red-950/20' : hoverInfo.object.type === 'hot' ? 'text-amber-400 border-amber-400/40 bg-amber-950/20' : 'text-signal/80 border-signal/30 bg-signal/10'}`}>
+                    {hoverInfo.object.type.toUpperCase()}
+                  </span>
+                </div>
+                <div className="pt-1 text-[11px] font-mono text-white leading-snug">{hoverInfo.object.label}</div>
+              </>
+            ) : (
+              /* GeoJSON conflict country zone — use hoveredZoneConf (pre-computed from _iso) */
+              (() => {
+                const zLabel = hoveredZoneConf?.label ?? hoverInfo.object.properties?.label ?? hoverInfo.object.properties?.NAME_EN ?? 'CONFLICT ZONE';
+                const zAlert = hoveredZoneConf?.alertLevel ?? hoverInfo.object.properties?.alertLevel ?? 'ACTIVE';
+                const zStart = hoveredZoneConf?.startDate ?? hoverInfo.object.properties?.startDate ?? '—';
+                const zCas   = hoveredZoneConf?.casualties ?? hoverInfo.object.properties?.casualties ?? '—';
+                const zDis   = hoveredZoneConf?.displaced ?? hoverInfo.object.properties?.displaced ?? '—';
+                const zStat  = hoveredZoneConf?.status ?? hoverInfo.object.properties?.status ?? '';
+                return (
+                  <>
+                    <div className="flex justify-between items-start border-b border-signal/30 pb-2 mb-1">
+                      <span className="font-mono text-signal font-bold tracking-tight text-[10.5px] leading-snug max-w-[200px]">{zLabel}</span>
+                      <span className={`text-[10px] font-mono px-1 border shrink-0 ml-2 ${zAlert === 'HIGH' ? 'text-red-400 border-red-400/40' : zAlert === 'ELEVATED' ? 'text-amber-400 border-amber-400/40' : 'text-signal/80 border-signal/30'}`}>
+                        {zAlert}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1 text-[11px] font-mono">
+                      {[
+                        ['START',      zStart],
+                        ['CASUALTIES', zCas],
+                        ['DISPLACED',  zDis],
+                      ].map(([l, v]) => (
+                        <div key={l} className="flex gap-2">
+                          <span className="text-text-light/50 w-24">{l}:</span>
+                          <span className="text-white">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {zStat && (
+                      <div className="pt-2 border-t border-text-light/10 text-[9.5px] font-mono text-white/70 leading-snug">{zStat}</div>
+                    )}
+                    <div className="text-[8px] font-mono text-signal/40 tracking-wider pt-1">CLICK → WIKIPEDIA</div>
+                  </>
+                );
+              })()
             )}
           </div>
         )}
       </div>
+
     </div>
   );
 };
+
 
 export default MapPanel;

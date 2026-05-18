@@ -63,19 +63,28 @@ export default async function handler(req) {
   if (rateLimitResponse) return rateLimitResponse;
 
   const relayBaseUrl = getRelayBaseUrl();
-  if (!relayBaseUrl) {
-    return new Response(JSON.stringify({ error: 'WS_RELAY_URL is not configured' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
-  }
 
   try {
     const requestUrl = new URL(req.url);
-    const relayUrl = `${relayBaseUrl}/polymarket${requestUrl.search || ''}`;
-    const response = await fetchWithTimeout(relayUrl, {
-      headers: getRelayHeaders({ Accept: 'application/json' }),
-    }, 15000);
+    let response;
+
+    // Try relay first if configured
+    if (relayBaseUrl) {
+      try {
+        const relayUrl = `${relayBaseUrl}/polymarket${requestUrl.search || ''}`;
+        response = await fetchWithTimeout(relayUrl, {
+          headers: getRelayHeaders({ Accept: 'application/json' }),
+        }, 15000);
+      } catch { /* relay failed, try Gamma */ }
+    }
+
+    // Fallback: call Polymarket Gamma API directly (server-side, no CORS)
+    if (!response || !response.ok) {
+      const gammaUrl = `https://gamma-api.polymarket.com/events${requestUrl.search || '?limit=10&sort=volume&closed=false'}`;
+      response = await fetchWithTimeout(gammaUrl, {
+        headers: { 'Accept': 'application/json' },
+      }, 10000);
+    }
 
     const body = await response.text();
     const isSuccess = response.status >= 200 && response.status < 300;

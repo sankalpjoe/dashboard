@@ -14,8 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["'Barlow Condensed'", "sans-serif"],
-        body: ["'Barlow'", "sans-serif"],
+        display: ["'Projekt Blackbird'", "'Inter'", "sans-serif"],
+        body: ["'Inter'", "sans-serif"],
         mono: ["'IBM Plex Mono'", "monospace"],
       },
       colors: {
@@ -52,11 +52,12 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        signal: "#F04C35",
-        "bg-dark": "#1A1A18",
-        "bg-mid": "#2A2A28",
-        "bg-light": "#C8C8C4",
-        "text-light": "#C8C8C4",
+        signal: "var(--signal)",
+        "signal-bright": "var(--signal-bright)",
+        "bg-dark": "var(--bg-dark)",
+        "bg-mid": "var(--bg-mid)",
+        "bg-light": "var(--bg-light)",
+        "text-light": "var(--text-light)",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

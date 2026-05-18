@@ -1,0 +1,31 @@
+# Python Requirements for Dashboard Integrations & Scripts
+# Install via: pip install -r requirements.txt
+
+# --- Core Web & HTTP Client ---
+requests>=2.31.0         # For making API calls (e.g., to Groq, RSS feeds, etc.)
+urllib3>=2.0.0           # HTTP client dependency for requests
+
+# --- AI & LLM Integrations ---
+groq>=0.5.0              # Official Groq SDK (used for LLM compound-beta searches)
+openai>=1.12.0           # OpenAI SDK (compatible with many LLM providers)
+python-dotenv>=1.0.1     # Load API keys/environment variables from .env
+
+# --- RSS & XML Data Parsing ---
+feedparser>=6.0.10       # Robust parsing of RSS/Atom feeds (Nitter, RSSHub, Google News)
+beautifulsoup4>=4.12.3   # Parsing HTML/XML web elements
+lxml>=5.1.0              # High-performance XML/HTML parser back-end
+
+# --- Telegram OSINT Polling & WebSockets ---
+Telethon>=1.34.0         # Python Telegram API client (equivalent to node-telegram)
+websockets>=12.0         # WebSocket client/server support (equivalent to ws package)
+
+# --- Data Science & Manipulation ---
+pandas>=2.2.0            # Data analysis and manipulation (equivalent to papaparse/d3)
+numpy>=1.26.0            # Numerical operations
+
+# --- Schema & Data Validation ---
+pydantic>=2.6.0          # Data validation and settings management (equivalent to zod)
+
+# --- Python Backend / API Server (Optional equivalent for Node serverless API) ---
+fastapi>=0.110.0         # Modern, high-performance web framework for APIs
+uvicorn>=0.27.0          # ASGI server implementation to run FastAPI

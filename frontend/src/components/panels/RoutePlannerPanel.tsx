@@ -167,14 +167,14 @@ const INCIDENT_ICONS: Record<number, { icon: string; label: string }> = {
 
 function sevBorderClass(severity: number) {
   if (severity >= 4) return 'border-l-red-500';
-  if (severity >= 3) return 'border-l-orange-500';
+  if (severity >= 3) return 'border-l-lime-600';
   if (severity >= 2) return 'border-l-yellow-500';
   return 'border-l-green-500';
 }
 
 function sevIconBg(severity: number) {
   if (severity >= 4) return 'bg-red-500/15';
-  if (severity >= 3) return 'bg-orange-500/15';
+  if (severity >= 3) return 'bg-lime-600/15';
   if (severity >= 2) return 'bg-yellow-500/15';
   return 'bg-green-500/15';
 }

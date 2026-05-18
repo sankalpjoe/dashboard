@@ -17,11 +17,11 @@ export function FlightTracker() {
 
     if (loading) return (
         <div className="flex-1 flex flex-col">
-            <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(26,26,24,0.1)' }}>
-                <h2 className="font-display text-bg-dark text-sm tracking-tight">LIVE FLIGHTS — INDIA AIRSPACE</h2>
+            <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(207,201,194,0.10)' }}>
+                <h2 className="font-display text-text-light text-sm tracking-tight">LIVE FLIGHTS — INDIA AIRSPACE</h2>
             </div>
             <div className="flex-1 flex items-center justify-center">
-                <span className="mono-label text-bg-dark/40 animate-pulse">ACQUIRING . . .</span>
+                <span className="mono-label text-text-light/40 animate-pulse">ACQUIRING . . .</span>
             </div>
         </div>
     );
@@ -29,15 +29,15 @@ export function FlightTracker() {
     return (
         <div className="flex-1 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'rgba(26,26,24,0.1)' }}>
-                <h2 className="font-display text-bg-dark text-sm tracking-tight">LIVE FLIGHTS — INDIA AIRSPACE</h2>
+            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'rgba(207,201,194,0.10)' }}>
+                <h2 className="font-display text-text-light text-sm tracking-tight">LIVE FLIGHTS — INDIA AIRSPACE</h2>
                 <div className="flex items-center gap-2">
                     {emergencies.length > 0 && (
                         <span className="mono-label text-red-500 bg-red-500/10 px-2 py-0.5 rounded">
                             {emergencies.length} EMERG
                         </span>
                     )}
-                    <span className="mono-label text-bg-dark/50">{flights.length} AC</span>
+                    <span className="mono-label text-text-light/50">{flights.length} AC</span>
                 </div>
             </div>
 
@@ -75,7 +75,7 @@ export function FlightTracker() {
                             className={`py-2 border-b border-bg-dark/8 flex flex-col gap-0.5 ${f.isEmergency ? 'bg-red-500/5' : f.isMilitary ? 'bg-amber-500/5' : ''}`}
                         >
                             <div className="flex items-center justify-between">
-                                <span className={`font-mono text-xs font-bold ${f.isEmergency ? 'text-red-400' : f.isMilitary ? 'text-amber-400' : 'text-bg-dark'}`}>
+                                <span className={`font-mono text-xs font-bold ${f.isEmergency ? 'text-red-400' : f.isMilitary ? 'text-amber-400' : 'text-text-light'}`}>
                                     {f.callsign}
                                 </span>
                                 <div className="flex items-center gap-2">
@@ -83,12 +83,12 @@ export function FlightTracker() {
                                         <span className={`mono-label ${SQ_COLORS[f.squawk]}`}>SQ{f.squawk}</span>
                                     )}
                                     {f.category && (
-                                        <span className="mono-label text-bg-dark/40">{CAT_LABELS[f.category] ?? f.category}</span>
+                                        <span className="mono-label text-text-light/40">{CAT_LABELS[f.category] ?? f.category}</span>
                                     )}
                                     {f.isDark && <span className="mono-label text-purple-400">DARK</span>}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3 text-[11px] font-mono text-bg-dark/50">
+                            <div className="flex items-center gap-3 text-[11px] font-mono text-text-light/50">
                                 <span>{f.altitudeFt.toLocaleString()} ft</span>
                                 <span>{f.speedKnots} kt</span>
                                 <span>{f.heading}°</span>
@@ -97,7 +97,7 @@ export function FlightTracker() {
                         </div>
                     ))}
                 {flights.length === 0 && (
-                    <div className="text-center py-8 mono-label text-bg-dark/30">NO AIRCRAFT DATA</div>
+                    <div className="text-center py-8 mono-label text-text-light/30">NO AIRCRAFT DATA</div>
                 )}
             </div>
         </div>
@@ -107,10 +107,10 @@ export function FlightTracker() {
 function StatChip({ label, value, red, mono }: { label: string; value: string | number; red?: boolean; mono?: boolean }) {
     return (
         <div className="px-3 text-center">
-            <div className={`font-mono text-sm font-bold ${red && Number(value) > 0 ? 'text-amber-400' : 'text-bg-dark'}`}>
+            <div className={`font-mono text-sm font-bold ${red && Number(value) > 0 ? 'text-amber-400' : 'text-text-light'}`}>
                 {mono ? <span className="text-[11px]">{value}</span> : value}
             </div>
-            <div className="mono-label text-bg-dark/40 text-[10px]">{label}</div>
+            <div className="mono-label text-text-light/40 text-[10px]">{label}</div>
         </div>
     );
 }

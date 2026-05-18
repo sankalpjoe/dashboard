@@ -441,9 +441,23 @@ const RSS_PROXY_ALLOWED_DOMAINS = new Set([
   'www.goodnewsnetwork.org', 'www.positive.news', 'reasonstobecheerful.world',
   'www.optimistdaily.com', 'www.sunnyskyz.com', 'www.huffpost.com',
   'www.sciencedaily.com', 'feeds.nature.com', 'www.livescience.com', 'www.newscientist.com',
-  // India feeds
+  // India feeds — national dailies
   'indianexpress.com', 'www.livemint.com', 'thewire.in', 'theprint.in',
-  'timesofindia.indiatimes.com', 'www.hindustantimes.com', 'rsshub.app',
+  'timesofindia.indiatimes.com', 'www.hindustantimes.com', 'www.thehindu.com',
+  'ndtv.com', 'feeds.feedburner.com',
+  // India — city / hyperlocal
+  'bangaloremirror.indiatimes.com', 'telanganatoday.com',
+  // India — vernacular dailies
+  'www.prajavani.net', 'vijayakarnataka.com', 'kannadaprabha.com',
+  'eenadu.net', 'www.sakshi.com', 'www.ntnews.com',
+  'lokmat.com', 'maharashtratimes.com', 'www.esakal.com',
+  'navbharattimes.indiatimes.com', 'www.amarujala.com', 'www.jagran.com',
+  'www.loksatta.com',
+  // India — official government alerts
+  'pib.gov.in', 'www.mea.gov.in', 'cert-in.org.in',
+  'mausam.imd.gov.in', 'cpcb.nic.in', 'ndma.gov.in',
+  // Other
+  'rsshub.app',
 ]);
 
 function rssProxyPlugin(): Plugin {
@@ -781,6 +795,63 @@ function routeApiPlugin(): Plugin {
   };
 }
 
+function twitterIntelApiPlugin(): Plugin {
+  return {
+    name: 'twitter-intel-api',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/twitter-intel')) return next();
+
+        // Only handle POST
+        if (req.method !== 'POST' && req.method !== 'OPTIONS') return next();
+
+        try {
+          const { default: handler } = await import('./api/twitter-intel.js');
+          const port = server.config.server.port || 5173;
+          const url = new URL(req.url, `http://localhost:${port}`);
+
+          let body: string | undefined;
+          if (req.method === 'POST') {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) {
+              chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+            }
+            body = Buffer.concat(chunks).toString();
+          }
+
+          const headers: Record<string, string> = {};
+          for (const [key, value] of Object.entries(req.headers)) {
+            if (typeof value === 'string') headers[key] = value;
+            else if (Array.isArray(value)) headers[key] = value.join(', ');
+          }
+
+          // Inject GROQ key from Vite env into process.env for the handler
+          if (!process.env.GROQ_API_KEY && server.config.env?.VITE_GROQ_API_KEY) {
+            process.env.GROQ_API_KEY = server.config.env.VITE_GROQ_API_KEY;
+          }
+
+          const webRequest = new Request(url.toString(), {
+            method: req.method,
+            headers,
+            body: body || undefined,
+          });
+
+          const response = await handler(webRequest);
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(await response.text());
+        } catch (err) {
+          console.error('[twitter-intel-api] Error:', err);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Internal server error', items: [] }));
+        }
+      });
+    },
+  };
+}
+
 function osintApiPlugin(): Plugin {
   return {
     name: 'osint-api',
@@ -890,6 +961,7 @@ export default defineConfig({
     routeApiPlugin(),
     osintApiPlugin(),
     sentimentApiPlugin(),
+    twitterIntelApiPlugin(),
     polymarketPlugin(),
     rssProxyPlugin(),
     youtubeLivePlugin(),

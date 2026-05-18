@@ -208,6 +208,23 @@ const ALLOWED_DOMAINS = [
   'theprint.in',
   'timesofindia.indiatimes.com',
   'www.hindustantimes.com',
+  'www.thehindu.com',
+  'ndtv.com',
+  // India — city / hyperlocal
+  'bangaloremirror.indiatimes.com', 'telanganatoday.com',
+  // India — vernacular dailies
+  'www.prajavani.net', 'kannada.oneindia.com',
+  'vijayakarnataka.com', 'kannadaprabha.com',
+  'eenadu.net', 'www.sakshi.com', 'www.ntnews.com',
+  'lokmat.com', 'maharashtratimes.com', 'www.esakal.com',
+  'navbharattimes.indiatimes.com', 'www.amarujala.com', 'www.jagran.com',
+  'www.loksatta.com',
+  // India — official government alerts
+  'pib.gov.in', 'www.mea.gov.in', 'cert-in.org.in',
+  'mausam.imd.gov.in', 'cpcb.nic.in', 'ndma.gov.in',
+  // Nitter instances — Twitter/X handle RSS feeds
+  'nitter.poast.org', 'nitter.privacydev.net', 'nitter.net',
+  'nitter.1d4.us', 'nitter.kavin.rocks', 'nitter.unixfox.eu',
   'rsshub.app',
   'www.twz.com',
   'gcaptain.com',
@@ -458,14 +475,19 @@ export default async function handler(req) {
     });
   } catch (error) {
     const isTimeout = error.name === 'AbortError';
-    console.error('RSS proxy error:', feedUrl, error.message);
+    const isGnews = feedUrl.includes('news.google.com');
+    // Downgrade Google News failures to warn — they're rate-limited frequently
+    (isGnews ? console.warn : console.error)(
+      `[RSS Proxy] ${isGnews ? 'Google News blocked/timeout' : 'Critical failure'} for ${feedUrl.slice(0, 80)}...`, error.message
+    );
+    
     return new Response(JSON.stringify({
-      error: isTimeout ? 'Feed timeout' : 'Failed to fetch feed',
-      details: error.message,
+      error: isTimeout ? 'Gateway Timeout' : 'Service Unavailable',
+      message: error.message,
       url: feedUrl
     }), {
       status: isTimeout ? 504 : 502,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 }

@@ -6,29 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useCXODorking } from "@/hooks/useOSINT";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const GS_CXOS = [
-  "David Solomon",
-  "John Waldron",
-  "Denis Coleman",
-  "Sheara Fredman",
-  "Kathryn Ruemmler",
-  "Marco Argenti",
-  "Philip Berlinski"
-];
-
 export function OSINTPanel() {
-  const [name, setName] = useState(GS_CXOS[0]);
-  const [company] = useState("Goldman Sachs");
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [copiedQuery, setCopiedQuery] = useState<string | null>(null);
 
   const dorking = useCXODorking();
@@ -57,48 +40,43 @@ export function OSINTPanel() {
 
   return (
     <Card className="w-full">
-      <CardHeader className="border-b border-signal/20 bg-bg-dark/40">
-        <CardTitle className="flex items-center gap-2 text-signal">
-          <Shield className="h-5 w-5 text-signal" />
+      <CardHeader className="border-b border-[#F5C400]/20 bg-bg-dark/40">
+        <CardTitle className="flex items-center gap-2 text-[#F5C400]">
+          <Shield className="h-5 w-5 text-[#F5C400]" />
           Executive OSINT Dorking
         </CardTitle>
-        <CardDescription className="text-signal/60">
-          Targeted intelligence gathering and background checks on leadership profiles.
+        <CardDescription className="text-[#F5C400]/60">
+          Generate Google dork queries for OSINT investigation.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Search Inputs */}
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-signal opacity-80 uppercase tracking-wider ml-1">
-              Select Executive
+            <label className="text-xs font-bold text-[#F5C400] opacity-80 uppercase tracking-wider ml-1">
+              Executive Name
             </label>
-            <Select value={name} onValueChange={setName}>
-              <SelectTrigger className="w-full bg-bg-dark/50 border-signal/30 text-signal focus:ring-signal">
-                <SelectValue placeholder="Select executive" />
-              </SelectTrigger>
-              <SelectContent className="bg-bg-dark border-signal/50 text-signal">
-                {GS_CXOS.map((cxo) => (
-                  <SelectItem key={cxo} value={cxo} className="focus:bg-signal/20 focus:text-signal cursor-pointer">
-                    {cxo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter executive name..."
+              className="bg-bg-dark/40 border-[#F5C400]/30 text-[#F5C400] focus:ring-[#F5C400]"
+            />
           </div>
-          <div className="space-y-1.5 opacity-60">
-            <label className="text-xs font-bold text-signal opacity-80 uppercase tracking-wider ml-1">
-              Organization (Locked)
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-[#F5C400] opacity-80 uppercase tracking-wider ml-1">
+              Organization
             </label>
             <Input
               value={company}
-              readOnly
-              className="bg-bg-dark/40 border-signal/10 text-signal/50 font-bold outline-none cursor-not-allowed"
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Enter company name..."
+              className="bg-bg-dark/40 border-[#F5C400]/30 text-[#F5C400] focus:ring-[#F5C400]"
             />
           </div>
           <Button
             onClick={handleSearch}
-            className="w-full bg-signal text-bg-dark hover:bg-signal/80 font-bold transition-all duration-300"
+            className="w-full bg-[#F5C400] text-text-light hover:bg-[#F5C400]/80 font-bold transition-all duration-300"
             disabled={dorking.isPending || !name || !company}
           >
             {dorking.isPending ? (
@@ -118,8 +96,8 @@ export function OSINTPanel() {
         {/* Results */}
         {dorking.data && (
           <div className="space-y-4">
-            <Alert className="bg-bg-dark border-signal/30 text-signal">
-              <AlertTriangle className="h-4 w-4 text-signal" />
+            <Alert className="bg-bg-dark border-[#F5C400]/30 text-[#F5C400]">
+              <AlertTriangle className="h-4 w-4 text-[#F5C400]" />
               <AlertDescription>
                 <strong>OSINT Queries Generated:</strong> Copy and paste into Google for manual investigation.
                 For automated results, integrate OSINT APIs.
@@ -127,11 +105,11 @@ export function OSINTPanel() {
             </Alert>
 
             <Tabs defaultValue="linkedin" className="w-full">
-              <TabsList className="grid w-full grid-cols-4 bg-bg-dark border border-signal/20">
-                <TabsTrigger value="linkedin" className="data-[state=active]:bg-signal/20 data-[state=active]:text-signal">LinkedIn</TabsTrigger>
-                <TabsTrigger value="news" className="data-[state=active]:bg-signal/20 data-[state=active]:text-signal">News</TabsTrigger>
-                <TabsTrigger value="security" className="data-[state=active]:bg-signal/20 data-[state=active]:text-signal">Security</TabsTrigger>
-                <TabsTrigger value="files" className="data-[state=active]:bg-signal/20 data-[state=active]:text-signal">Files</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-4 bg-bg-dark border border-[#F5C400]/20">
+                <TabsTrigger value="linkedin" className="data-[state=active]:bg-[#F5C400]/20 data-[state=active]:text-[#F5C400]">LinkedIn</TabsTrigger>
+                <TabsTrigger value="news" className="data-[state=active]:bg-[#F5C400]/20 data-[state=active]:text-[#F5C400]">News</TabsTrigger>
+                <TabsTrigger value="security" className="data-[state=active]:bg-[#F5C400]/20 data-[state=active]:text-[#F5C400]">Security</TabsTrigger>
+                <TabsTrigger value="files" className="data-[state=active]:bg-[#F5C400]/20 data-[state=active]:text-[#F5C400]">Files</TabsTrigger>
               </TabsList>
 
               {/* LinkedIn Tab */}
@@ -163,26 +141,26 @@ export function OSINTPanel() {
                             </Button>
                           </div>
                         </div>
-                        <code className="block p-3 bg-bg-dark border border-signal/20 rounded text-xs break-all text-signal">
+                        <code className="block p-3 bg-bg-dark border border-[#F5C400]/20 rounded text-xs break-all text-[#F5C400]">
                           {dorking.data.queries.linkedin}
                         </code>
-                        <p className="text-xs text-signal/50 italic">Manual search required for direct profile access.</p>
+                        <p className="text-xs text-[#F5C400]/50 italic">Manual search required for direct profile access.</p>
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
                 {dorking.data.queries.github && (
-                  <Card className="bg-bg-dark/50 border-signal/20">
+                  <Card className="bg-bg-mid/400 border-[#F5C400]/20">
                     <CardContent className="pt-6">
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <Badge variant="outline" className="text-signal border-signal/30">GitHub Activity</Badge>
+                          <Badge variant="outline" className="text-[#F5C400] border-[#F5C400]/30">GitHub Activity</Badge>
                           <div className="flex gap-2">
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-signal hover:bg-signal/20 hover:text-white"
+                              className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white"
                               onClick={() => copyQuery(dorking.data!.queries.github, 'github')}
                             >
                               {copiedQuery === 'github' ? (
@@ -194,14 +172,14 @@ export function OSINTPanel() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-signal hover:bg-signal/20 hover:text-white"
+                              className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white"
                               onClick={() => openGoogleSearch(dorking.data!.queries.github)}
                             >
                               <ExternalLink className="h-4 w-4" />
                             </Button>
                           </div>
                         </div>
-                        <code className="block p-3 bg-bg-dark border border-signal/20 rounded text-xs break-all text-signal">
+                        <code className="block p-3 bg-bg-dark border border-[#F5C400]/20 rounded text-xs break-all text-[#F5C400]">
                           {dorking.data.queries.github}
                         </code>
                       </div>
@@ -215,17 +193,17 @@ export function OSINTPanel() {
                 {dorking.data.findings.news?.results?.length > 0 ? (
                   <div className="space-y-3">
                     {dorking.data.findings.news.results.map((result: any, idx: number) => (
-                      <Card key={idx} className="border-l-4 border-l-signal bg-bg-dark/50 border-y-signal/10 border-r-signal/10">
+                      <Card key={idx} className="border-l-4 border-l-signal bg-bg-mid/400 border-y-signal/10 border-r-signal/10">
                         <CardContent className="pt-4 pb-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center justify-between">
                               <h4 className="font-semibold text-sm line-clamp-2 text-white">{result.title}</h4>
-                              <Button variant="ghost" size="sm" className="text-signal hover:bg-signal/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
+                              <Button variant="ghost" size="sm" className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
                                 <ExternalLink className="h-3 w-3" />
                               </Button>
                             </div>
-                            <p className="text-xs text-signal/70">{result.snippet}</p>
-                            <span className={`w-fit px-2 py-0.5 rounded text-[10px] font-bold ${result.sentiment === 'negative' ? 'bg-red-500/20 text-red-400' : 'bg-signal/20 text-signal'}`}>
+                            <p className="text-xs text-[#F5C400]/70">{result.snippet}</p>
+                            <span className={`w-fit px-2 py-0.5 rounded text-[10px] font-bold ${result.sentiment === 'negative' ? 'bg-red-500/20 text-red-400' : 'bg-[#F5C400]/20 text-[#F5C400]'}`}>
                               {result.sentiment.toUpperCase()}
                             </span>
                           </div>
@@ -234,19 +212,19 @@ export function OSINTPanel() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-6 text-signal/50 text-sm">
+                  <div className="text-center py-6 text-[#F5C400]/50 text-sm">
                     No recent negative news mentions found.
                   </div>
                 )}
 
                 {dorking.data.queries.news && (
-                  <div className="mt-4 pt-4 border-t border-signal/20 border-dashed">
-                    <p className="text-xs font-semibold mb-2 text-signal">Original Dork Query:</p>
+                  <div className="mt-4 pt-4 border-t border-[#F5C400]/20 border-dashed">
+                    <p className="text-xs font-semibold mb-2 text-[#F5C400]">Original Dork Query:</p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-bg-dark border border-signal/20 rounded text-[10px] break-all text-signal">
+                      <code className="flex-1 p-2 bg-bg-dark border border-[#F5C400]/20 rounded text-[10px] break-all text-[#F5C400]">
                         {dorking.data.queries.news}
                       </code>
-                      <Button variant="outline" size="sm" className="border-signal/30 text-signal hover:bg-signal/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.news)}>
+                      <Button variant="outline" size="sm" className="border-[#F5C400]/30 text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.news)}>
                         <Search className="h-3 w-3" />
                       </Button>
                     </div>
@@ -259,39 +237,39 @@ export function OSINTPanel() {
                 {dorking.data.findings.leaks?.results?.length > 0 ? (
                   <div className="space-y-3">
                     {dorking.data.findings.leaks.results.map((result: any, idx: number) => (
-                      <Card key={idx} className="border-l-4 border-l-red-500 bg-bg-dark/50 border-y-signal/10 border-r-signal/10">
+                      <Card key={idx} className="border-l-4 border-l-red-500 bg-bg-mid/400 border-y-signal/10 border-r-signal/10">
                         <CardContent className="pt-4 pb-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center justify-between">
                               <h4 className="font-semibold text-sm text-white">{result.title}</h4>
-                              <Button variant="ghost" size="sm" className="text-signal hover:bg-signal/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
+                              <Button variant="ghost" size="sm" className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
                                 <ExternalLink className="h-3 w-3" />
                               </Button>
                             </div>
-                            <p className="text-xs text-signal/70">{result.snippet}</p>
+                            <p className="text-xs text-[#F5C400]/70">{result.snippet}</p>
                           </div>
                         </CardContent>
                       </Card>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-6 text-signal/50 text-sm">
+                  <div className="text-center py-6 text-[#F5C400]/50 text-sm">
                     No immediate leak/breach signatures detected in public indexes.
                   </div>
                 )}
 
                 <div className="space-y-3 mt-4">
                   {dorking.data.queries.leaks && (
-                    <Card className="bg-bg-dark/30 border-signal/20">
+                    <Card className="bg-bg-dark/30 border-[#F5C400]/20">
                       <CardContent className="pt-6">
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
                             <Badge variant="destructive" className="bg-red-500/20 text-red-400 border-red-500/30">Manual Leak Search</Badge>
-                            <Button variant="ghost" size="sm" className="text-signal hover:bg-signal/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.leaks)}>
+                            <Button variant="ghost" size="sm" className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.leaks)}>
                               <ExternalLink className="h-4 w-4" />
                             </Button>
                           </div>
-                          <code className="block p-3 bg-bg-dark border border-signal/20 rounded text-xs break-all text-signal">
+                          <code className="block p-3 bg-bg-dark border border-[#F5C400]/20 rounded text-xs break-all text-[#F5C400]">
                             {dorking.data.queries.leaks}
                           </code>
                         </div>
@@ -306,38 +284,38 @@ export function OSINTPanel() {
                 {dorking.data.findings.files?.results?.length > 0 ? (
                   <div className="space-y-3">
                     {dorking.data.findings.files.results.map((result: any, idx: number) => (
-                      <Card key={idx} className="border-l-4 border-l-blue-500 bg-bg-dark/50 border-y-signal/10 border-r-signal/10">
+                      <Card key={idx} className="border-l-4 border-l-blue-500 bg-bg-mid/400 border-y-signal/10 border-r-signal/10">
                         <CardContent className="pt-4 pb-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center justify-between">
                               <h4 className="font-semibold text-sm line-clamp-1 text-white">{result.title}</h4>
-                              <Button variant="ghost" size="sm" className="text-signal hover:bg-signal/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
+                              <Button variant="ghost" size="sm" className="text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => window.open(result.link, '_blank')}>
                                 <ExternalLink className="h-3 w-3" />
                               </Button>
                             </div>
-                            <p className="text-xs text-signal/70 font-mono">{result.link.substring(0, 60)}...</p>
+                            <p className="text-xs text-[#F5C400]/70 font-mono">{result.link.substring(0, 60)}...</p>
                           </div>
                         </CardContent>
                       </Card>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-6 text-signal/50 text-sm">
+                  <div className="text-center py-6 text-[#F5C400]/50 text-sm">
                     No exposed sensitive documents (PDF/DOC/XLS) found in direct search.
                   </div>
                 )}
 
                 {dorking.data.queries.files && (
-                  <div className="mt-4 pt-4 border-t border-signal/20 border-dashed">
+                  <div className="mt-4 pt-4 border-t border-[#F5C400]/20 border-dashed">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold text-signal">Deep File Dorking:</p>
-                      <Badge variant="outline" className="text-[10px] text-signal border-signal/30">PDF/XLS/DOC</Badge>
+                      <p className="text-xs font-semibold text-[#F5C400]">Deep File Dorking:</p>
+                      <Badge variant="outline" className="text-[10px] text-[#F5C400] border-[#F5C400]/30">PDF/XLS/DOC</Badge>
                     </div>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-bg-dark border border-signal/20 rounded text-[10px] break-all text-signal">
+                      <code className="flex-1 p-2 bg-bg-dark border border-[#F5C400]/20 rounded text-[10px] break-all text-[#F5C400]">
                         {dorking.data.queries.files}
                       </code>
-                      <Button variant="outline" size="sm" className="border-signal/30 text-signal hover:bg-signal/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.files)}>
+                      <Button variant="outline" size="sm" className="border-[#F5C400]/30 text-[#F5C400] hover:bg-[#F5C400]/20 hover:text-white" onClick={() => openGoogleSearch(dorking.data!.queries.files)}>
                         <Search className="h-3 w-3" />
                       </Button>
                     </div>
@@ -346,9 +324,9 @@ export function OSINTPanel() {
               </TabsContent>
             </Tabs>
 
-            <Alert className="bg-bg-dark border-signal/30 mt-4">
-              <AlertDescription className="text-signal/80">
-                <strong className="text-signal">Pro Tip:</strong> {dorking.data.summary.recommendation}
+            <Alert className="bg-bg-dark border-[#F5C400]/30 mt-4">
+              <AlertDescription className="text-[#F5C400]/80">
+                <strong className="text-[#F5C400]">Pro Tip:</strong> {dorking.data.summary.recommendation}
               </AlertDescription>
             </Alert>
           </div>
@@ -364,7 +342,7 @@ export function OSINTPanel() {
         )}
 
         {!dorking.data && !dorking.isPending && (
-          <div className="text-center py-12 text-signal/40">
+          <div className="text-center py-12 text-[#F5C400]/40">
             <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p className="text-sm">Enter executive name and company to generate OSINT queries</p>
             <p className="text-xs mt-2">Google dorking for background checks and intelligence gathering</p>

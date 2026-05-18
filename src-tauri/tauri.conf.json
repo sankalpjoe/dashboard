@@ -7,7 +7,7 @@
   "build": {
     "beforeDevCommand": "npm run build:sidecar-sebuf && npm run dev",
     "beforeBuildCommand": "npm run build:desktop",
-    "frontendDist": "../dist",
+    "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:3000"
   },
   "app": {
@@ -57,7 +57,7 @@
       "sidecar/package.json",
       "sidecar/node",
       "../data",
-      "../src/config"
+      "../frontend/src/config"
     ],
     "windows": {
       "digestAlgorithm": "sha256",

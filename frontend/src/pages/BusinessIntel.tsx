@@ -34,8 +34,8 @@ export default function BusinessIntel() {
 
                     {/* Middle Column: Corporate Risk */}
                     <div className="flex-1 flex flex-col gap-4">
-                        <div className="border border-orange-500/20 bg-[#00073f]/40 p-4 mb-2 backdrop-blur-sm">
-                            <h2 className="font-mono text-orange-400 font-bold tracking-widest mb-2 flex items-center gap-2">
+                        <div className="border border-lime-600/20 bg-[#00073f]/40 p-4 mb-2 backdrop-blur-sm">
+                            <h2 className="font-mono text-lime-500 font-bold tracking-widest mb-2 flex items-center gap-2">
                                 <AlertTriangle size={16} />
                                 CORPORATE RISK SUMMARY
                             </h2>
@@ -89,7 +89,7 @@ function Feed({ items, loading, emptyMessage }: { items: IntelItem[], loading: b
             {items.map((item, id) => (
                 <div key={id} className={`flex flex-col bg-[#00073f]/30 border p-3 transition-all hover:bg-white/5 backdrop-blur-sm
                     ${item.riskLevel === 'critical' ? 'border-red-500/30 hover:border-red-500' :
-                        item.riskLevel === 'high' ? 'border-orange-500/30 hover:border-orange-500' :
+                        item.riskLevel === 'high' ? 'border-lime-600/30 hover:border-lime-600' :
                             item.riskLevel === 'medium' ? 'border-amber-500/30 hover:border-amber-500' :
                                 'border-signal/10 hover:border-signal/60'}`}>
 
@@ -97,14 +97,14 @@ function Feed({ items, loading, emptyMessage }: { items: IntelItem[], loading: b
                         <div className="flex items-center gap-2">
                             <span className={`text-[9px] font-mono font-bold tracking-widest px-1.5 py-0.5 border
                                 ${item.source.includes('TG') ? 'text-blue-400 bg-blue-400/10 border-blue-400/20' :
-                                    item.source.includes('r/') || item.source.includes('REDDIT') ? 'text-orange-400 bg-orange-400/10 border-orange-400/20' :
+                                    item.source.includes('r/') || item.source.includes('REDDIT') ? 'text-lime-500 bg-lime-500/10 border-lime-500/20' :
                                         item.source.includes('X / TWITTER') || item.source.includes('X)') ? 'text-sky-400 bg-sky-400/10 border-sky-400/20' :
                                             'text-signal bg-signal/10 border-signal/20'}`}>
                                 {item.source}
                             </span>
                         </div>
                         <span className={`text-[9px] font-mono px-1.5 border border-current ${item.riskLevel === 'critical' ? 'text-red-500' :
-                            item.riskLevel === 'high' ? 'text-orange-500' :
+                            item.riskLevel === 'high' ? 'text-lime-600' :
                                 item.riskLevel === 'medium' ? 'text-amber-500' :
                                     'text-signal'
                             }`}>
