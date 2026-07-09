@@ -5,10 +5,10 @@
   "version": "2.5.23",
   "identifier": "app.worldmonitor.desktop",
   "build": {
-    "beforeDevCommand": "npm run build:sidecar-sebuf && npm run dev",
-    "beforeBuildCommand": "npm run build:desktop",
+    "beforeDevCommand": "npm --prefix frontend run dev",
+    "beforeBuildCommand": "npm --prefix frontend run build",
     "frontendDist": "../frontend/dist",
-    "devUrl": "http://localhost:3000"
+    "devUrl": "http://localhost:5174"
   },
   "app": {
     "windows": [

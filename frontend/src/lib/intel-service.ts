@@ -11,7 +11,16 @@
  *
  * Categories: conflict | health | disease | traffic | infra | vip |
  *             protest  | cyber  | military | general
+ *
+ * GEOFENCE: every item is gated to the 5 monitored cities
+ *           (Bangalore · Delhi · Hyderabad · Mumbai · Chennai). National-only
+ *           and foreign items (e.g. Kerala monsoon, Italy earthquake) are
+ *           dropped via resolveCityFromText() shared with news-service.
  */
+
+import { resolveCityFromText, CITY_COORDS, SUPPORTED_CITIES, type SupportedCity } from './news-service';
+import { passesSemanticVet, riskWeight } from './semantic-gate';
+import { isJunk } from './noise-filter';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -145,8 +154,14 @@ const INTEL_FEEDS: FeedDef[] = [
 
   // BLR Traffic Police
   {
-    url: gnews('"Bengaluru Traffic Police" OR "Bangalore traffic" alert diversion accident road block', '1d'),
+    url: gnews('"Bengaluru Traffic Police" OR "Bengaluru traffic" OR "Bangalore traffic" alert advisory diversion accident road block "alternate routes"', '1d'),
     source: 'BLR TRAFFIC POLICE', type: 'traffic',
+  },
+
+  // BLR protest advisories — Freedom Park is the city's designated protest venue
+  {
+    url: gnews('(Bengaluru OR Bangalore) (protest OR rally OR dharna OR morcha OR "Freedom Park") ("traffic advisory" OR diversion OR "alternate routes" OR police OR gathering)', '1d'),
+    source: 'BLR PROTEST WATCH', type: 'protest',
   },
 
   // BLR City Police
@@ -402,11 +417,144 @@ const INTEL_FEEDS: FeedDef[] = [
     url: gnews('PM Modi President Murmu Home Minister Chief Minister VVIP SPG protection convoy visit India', '1d'),
     source: 'VIP TRACKER', type: 'vip',
   },
+
+  // ══ LOCAL & NATIONAL DAILIES (site-scoped, grouped by language) ════════════
+  // Each group is pinned to its city/state so the 5-city geofence keeps them.
+  // Vernacular headlines are auto-translated to English downstream.
+
+  // Kannada press → Bengaluru / Karnataka
   {
-    url: gnews('Pakistan military China PLA Bangladesh Myanmar Nepal earthquake Sri Lanka Maldives Afghanistan Taliban', '2d'),
-    source: 'NEIGHBOURHOOD WATCH', type: 'conflict',
+    url: gnews('(site:vijayavani.net OR site:vijaykarnataka.com OR site:prajavani.net OR site:udayavani.com OR site:kannadaprabha.com) (Bengaluru OR Bangalore OR Karnataka)', '2d'),
+    source: 'KANNADA PRESS', type: 'general',
+  },
+  // Marathi press → Mumbai / Maharashtra
+  {
+    url: gnews('(site:lokmat.com OR site:esakal.com OR site:maharashtratimes.com OR site:pudhari.news OR site:loksatta.com) (Mumbai OR Maharashtra)', '2d'),
+    source: 'MARATHI PRESS', type: 'general',
+  },
+  // Telugu press → Hyderabad / Telangana
+  {
+    url: gnews('(site:eenadu.net OR site:sakshi.com OR site:andhrajyothy.com OR site:ntnews.com OR site:velugu.v6velugu.com) (Hyderabad OR Telangana)', '2d'),
+    source: 'TELUGU PRESS', type: 'general',
+  },
+  // Urdu press → Hyderabad (Deccan)
+  {
+    url: gnews('(site:siasat.com OR site:munsifdaily.com OR site:etemaad.com OR site:therahnuma.com) (Hyderabad OR Telangana)', '2d'),
+    source: 'URDU PRESS', type: 'general',
+  },
+  // Hindi press → Delhi / NCR
+  {
+    url: gnews('(site:bhaskar.com OR site:jagran.com OR site:livehindustan.com OR site:amarujala.com OR site:patrika.com OR site:navbharattimes.indiatimes.com OR site:punjabkesari.in) (Delhi OR NCR OR Noida OR Gurugram)', '2d'),
+    source: 'HINDI PRESS', type: 'general',
+  },
+  // English national dailies → any of the 5 cities (geofence narrows to city items)
+  {
+    url: gnews('(site:timesofindia.indiatimes.com OR site:thehindu.com OR site:hindustantimes.com OR site:indianexpress.com OR site:economictimes.indiatimes.com) (Bengaluru OR Mumbai OR Delhi OR Hyderabad OR Chennai)', '1d'),
+    source: 'NATIONAL PRESS', type: 'general',
+  },
+
+  // ══ FOREIGN CONSULATES & DIPLOMATIC MISSIONS (security/closure/protest) ═════
+  // Text-gated: city name in the query keeps results inside the 5-city scope.
+  {
+    url: gnews('(consulate OR "Consulate General" OR "Deputy High Commission" OR embassy OR "diplomatic mission") Mumbai (security OR threat OR protest OR closed OR shut OR alert OR advisory OR evacuat OR bomb OR attack)', '3d'),
+    source: 'DIPLOMATIC WATCH', type: 'vip',
+  },
+  {
+    url: gnews('(consulate OR "Consulate General" OR "Deputy High Commission" OR embassy OR "diplomatic mission") (Bengaluru OR Bangalore) (security OR threat OR protest OR closed OR shut OR alert OR advisory OR evacuat OR bomb OR attack)', '3d'),
+    source: 'DIPLOMATIC WATCH', type: 'vip',
+  },
+  {
+    url: gnews('(consulate OR "Consulate General" OR "Deputy High Commission" OR embassy OR "diplomatic mission") Hyderabad (security OR threat OR protest OR closed OR shut OR alert OR advisory OR evacuat OR bomb OR attack)', '3d'),
+    source: 'DIPLOMATIC WATCH', type: 'vip',
   },
 ];
+
+// ── City-pinned community / forum feeds ──────────────────────────────────────
+// These sources are inherently city-scoped (a subreddit, a city civic portal),
+// but their post titles rarely contain the city name — so they would be wrongly
+// dropped by the text geofence. We fetch them separately and PIN them to a city.
+
+type PinnedFeed = { url: string; source: string; type: IntelCategory; city: SupportedCity };
+
+// Reddit subreddit, filtered to civic/crisis chatter via search RSS.
+function reddit(sub: string): string {
+  const q = 'power OR water OR traffic OR flood OR protest OR fire OR accident OR ' +
+            'metro OR strike OR outage OR road OR bandh OR curfew OR police OR rain';
+  const u = `https://www.reddit.com/r/${sub}/search.rss?restrict_sr=on&sort=new&` +
+            `q=${encodeURIComponent(q)}`;
+  return `/api/rss-proxy?url=${encodeURIComponent(u)}`;
+}
+
+const PINNED_CITY_FEEDS: PinnedFeed[] = [
+  // ── Reddit communities ──
+  { url: reddit('bangalore'), source: 'r/bangalore', type: 'general', city: 'BANGALORE' },
+  { url: reddit('mumbai'),    source: 'r/mumbai',    type: 'general', city: 'MUMBAI'    },
+  { url: reddit('hyderabad'), source: 'r/hyderabad', type: 'general', city: 'HYDERABAD' },
+
+  // ── Citizen Matters — civic journalism (Bengaluru & Mumbai) ──
+  { url: gnews('site:citizenmatters.in (Bengaluru OR Bangalore)', '4d'), source: 'CITIZEN MATTERS', type: 'infra', city: 'BANGALORE' },
+  { url: gnews('site:citizenmatters.in Mumbai', '4d'),                    source: 'CITIZEN MATTERS', type: 'infra', city: 'MUMBAI'    },
+  // Team-BHP (car catalog) and LBB (lifestyle) removed — net noise for a risk feed.
+];
+
+// ── Relevance gate ───────────────────────────────────────────────────────────
+// The intel feed monitors OPERATIONAL RISK only. These patterns drop the noise
+// that loose Google-News / handle queries drag in (car catalogs, lifestyle
+// listicles, jobs/exam results, ePaper headers, markets, sports, political fluff).
+const NOISE_PATTERNS: RegExp[] = [
+  // Automotive catalog / reviews (retail promos + vehicle model names now live
+  // in the shared noise-filter module — see passesRelevance below)
+  /\bprice in\b|on-?road (cost|price)|\bemi\b|\bmileage\b|\bspecs?\b|\bvariants?\b|\bcolou?rs\b|\breview\b|test drive|driving impressions|\blaunch(ed|es)?\b.*\b(bike|car|scooter|suv|ev)\b/i,
+  // Lifestyle / discovery
+  /\bbest (places|recommendations|brands)|things to do|top places|discover |\bcafe|restaurant|antiques|apparel|shopping|where to (eat|shop)|pop-?up|hidden gems|weekend (guide|getaway)/i,
+  // Jobs / exams / results / admissions
+  /recruitment|vacanc|job mela|jobs in|govt jobs|notification out|admit card|results? (announced|out)|first rank|cet result|colleges?|school holiday|private school|deo posts|tg?psc|exam date|hall ticket|free bus pass|scheme for students/i,
+  // ePaper / galleries / section headers
+  /epaper|e-paper|district edition|\bnewspaper\b|video galler|photo galler|news video|\b(business|entertainment|world|national|sports|top|latest) news\b/i,
+  // Political fluff / ceremony
+  /congratulat|felicitat|seasoned politician|nomination papers|cabinet portfolio|takes? oath|allocates? .*portfolio|happy birthday|warm wishes|birthday wishes|meets? cm|pays? tribute|inaugurat|foundation stone|World Environment Day|tree drive|green pledge/i,
+  // Markets / finance
+  /sensex|nifty|\bbse\b|\bnse\b|equities|foreign institutional|stock market|share price|market cap|ipo\b/i,
+  // Sports / celebrity / fuel-consumer / misc
+  /\bipl\b|\bt20\b|captaincy|suryakumar|\bcricket\b|bollywood|\bactor\b|\bactress\b|box office|\be85\b|\be20\b|petrol price|diesel price|fuel (price|launched|introduced)|medical tourism|yatra|pilgrimage/i,
+];
+
+// At least one operational-risk term must be present (broad civic + crisis vocab).
+const RISK_KEYWORDS: string[] = [
+  'traffic', 'jam', 'gridlock', 'diversion', 'road closure', 'road closed', 'roadblock',
+  'accident', 'crash', 'collision', 'derail', 'pothole', 'waterlog', 'flood', 'inundat',
+  'submerg', 'rain', 'downpour', 'cloudburst', 'storm', 'cyclone', 'landslide', 'earthquake',
+  'tremor', 'heatwave', 'heat wave', 'aqi', 'air quality', 'pollution', 'smog', 'fire',
+  'blaze', 'gas leak', 'chemical', 'blast', 'bomb', 'explosion', 'ied', 'terror', 'attack',
+  'encounter', 'naxal', 'shot', 'shoot', 'murder', 'killed', 'dead', 'body', 'assault',
+  'rape', 'kidnap', 'robbery', 'theft', 'crime', 'arrest', 'detained', 'fir', 'fir lodged',
+  'protest', 'strike', 'bandh', 'dharna', 'rally', 'agitation', 'riot', 'clash', 'curfew',
+  'section 144', 'lockdown', 'power cut', 'power outage', 'outage', 'grid', 'load shedding',
+  'water supply', 'water cut', 'sewer', 'drainage', 'desilt', 'nalla', 'leak', 'metro', 'bmtc',
+  'ksrtc', 'best bus', 'local train', 'rail', 'dmrc', 'disruption', 'delay', 'suspended',
+  'evacuat', 'rescue', 'ndrf', 'disaster', 'emergency', 'alert', 'warning', 'advisory',
+  'dengue', 'malaria', 'cholera', 'covid', 'outbreak', 'epidemic', 'disease', 'hospital',
+  'casualty', 'injured', 'missing', 'collapse', 'flyover', 'bridge', 'drunk driving', 'snatch',
+  'molest', 'firing', 'hooch', 'stampede', 'drown', 'electrocut',
+  // vehicle / road mishaps (avoid bare "bus" → matches "business")
+  'overturn', 'rams', 'ran over', 'run over', 'out of control', 'mishap', 'truck', 'lorry',
+  'tanker', 'ploughed', 'hit-and-run', 'hit and run',
+];
+
+function passesRelevance(headline: string): boolean {
+  const t = (headline || '').toLowerCase();
+  if (!t) return false;
+  // Shared consolidated junk filter first (single source of truth — new drop
+  // rules belong in noise-filter.ts, not in the local patterns above).
+  if (isJunk(headline)) return false;
+  if (NOISE_PATTERNS.some(re => re.test(t))) return false;
+  if (!RISK_KEYWORDS.some(k => t.includes(k))) return false;
+  // Task 1 — semantic vetting ("bunkum" filter): drop isolated viral /
+  // sensational / single-victim incidents that merely name a monitored city,
+  // while letting collective-action and macro/systemic events through.
+  // Runs on the original-case headline (patterns are case-insensitive).
+  return passesSemanticVet(headline);
+}
 
 // ── Risk classifier ──────────────────────────────────────────────────────────
 
@@ -444,27 +592,15 @@ function getRelativeTime(date: Date): string {
 }
 
 
-// ── Geo-coordinates by city keyword ─────────────────────────────────────────
+// ── Geo-coordinates — restricted to the 5 monitored cities ──────────────────
+// Uses the shared resolveCityFromText() so map plotting stays inside the 5-city
+// scope and never drops a pin on Kolkata / Pakistan / Kashmir etc.
 
-const REGION_COORDS: { keys: string[]; lat: number; lon: number }[] = [
-  { keys: ['bangalore', 'bengaluru', 'bbmp', 'bescom', 'bwssb', 'bmtc', 'blr'], lat: 12.9716, lon: 77.5946 },
-  { keys: ['hyderabad', 'ghmc', 'tgspdcl', 'secunderabad', 'telangana'],         lat: 17.3850, lon: 78.4867 },
-  { keys: ['mumbai', 'bombay', 'bmc', 'mcgm', 'dharavi', 'thane'],               lat: 19.0760, lon: 72.8777 },
-  { keys: ['delhi', 'dmrc', 'mcd', 'dpcc', 'ncr', 'noida', 'gurgaon'],           lat: 28.6139, lon: 77.2090 },
-  { keys: ['chennai', 'madras'],                                                   lat: 13.0827, lon: 80.2707 },
-  { keys: ['kolkata', 'calcutta'],                                                 lat: 22.5726, lon: 88.3639 },
-  { keys: ['pune'],                                                                lat: 18.5204, lon: 73.8567 },
-  { keys: ['bhopal', 'indore', 'madhya pradesh'],                                 lat: 23.2599, lon: 77.4126 },
-  { keys: ['jaipur', 'rajasthan'],                                                 lat: 26.9124, lon: 75.7873 },
-  { keys: ['ahmedabad', 'gujarat', 'surat'],                                       lat: 23.0225, lon: 72.5714 },
-  { keys: ['pakistan', 'islamabad', 'karachi', 'lahore'],                         lat: 33.6844, lon: 73.0479 },
-  { keys: ['loc', 'kashmir', 'srinagar'],                                         lat: 34.0837, lon: 74.7973 },
-];
-
-function extractCoords(title: string): { lat?: number; lon?: number } {
-  const t = title.toLowerCase();
-  for (const r of REGION_COORDS) {
-    if (r.keys.some(k => t.includes(k))) return { lat: r.lat, lon: r.lon };
+function extractCoords(title: string, city?: SupportedCity | null): { lat?: number; lon?: number } {
+  const resolved = city ?? resolveCityFromText(title);
+  if (resolved && CITY_COORDS[resolved]) {
+    const [lat, lon] = CITY_COORDS[resolved];
+    return { lat, lon };
   }
   return {};
 }
@@ -526,8 +662,26 @@ async function translateItems(items: IntelItem[]): Promise<IntelItem[]> {
 // System prompt lives in api/enrichment/intel-v2.js.
 // Keeps climate/disease (any location) + monitored-city incidents; drops the rest.
 
+// Heuristic 0–10 relevance score. Ranks the brief and, crucially, acts as the
+// fallback when the LLM enrichment is unavailable (Groq 429 / no key) — without
+// it the brief showed unranked, loosely-relevant items.
+function heuristicScore(item: IntelItem): number {
+  let s = 2 + riskWeight(item.headline || '');
+  const src = (item.source || '').toLowerCase();
+  if ((item as IntelItem & { _pin?: boolean })._pin ||
+      /pib|imd|cert|ndma|ndrf|police|bescom|bmc|ghmc|dmrc|bbmp|traffic|metro/.test(src)) s += 1;
+  const ts = new Date(item.time).getTime();
+  if (!isNaN(ts) && Date.now() - ts < 6 * 3600_000) s += 1;
+  if (item.riskLevel === 'critical') s += 1;
+  return Math.min(10, s);
+}
+
 async function enrichWithGroq(items: IntelItem[]): Promise<IntelItem[]> {
   if (items.length === 0) return items;
+
+  // Try the LLM enrichment; on any failure `enriched` stays null and we fall
+  // back to the heuristic score so the feed is still relevance-ranked.
+  let enriched: Array<{ score?: number; headline?: string; sentiment?: number; summary?: string[]; category?: string }> | null = null;
   try {
     const resp = await fetch('/api/enrichment/intel-v2', {
       method: 'POST',
@@ -535,31 +689,39 @@ async function enrichWithGroq(items: IntelItem[]): Promise<IntelItem[]> {
       body: JSON.stringify({ headlines: items.map((n) => n.headline) }),
       signal: AbortSignal.timeout(45_000),
     });
-    if (!resp.ok) return items;
-    const { items: enriched } = await resp.json();
+    if (resp.ok) {
+      const data = await resp.json();
+      enriched = Array.isArray(data?.items) ? data.items : null;
+    }
+  } catch { enriched = null; }
 
-    if (!enriched || enriched.length === 0) return items;
-
-    const result = items
-      .map((item, i) => {
-        const e = enriched?.[i];
-        if (!e) return item;
-        if (e.score < 4) return null; // drop non-city, non-climate noise
+  const HEURISTIC_MIN = 4;
+  const scored = items
+    .map((item, i) => {
+      const e = enriched?.[i];
+      if (e && typeof e.score === 'number') {
+        if (e.score < 4) return null; // LLM says noise
         return {
           ...item,
-          headline:      e.headline   || item.headline,
+          headline:      e.headline || item.headline,
           relevanceScore: e.score,
           sentiment:     e.sentiment,
           summary:       e.summary,
-          type:          (e.category  || item.type) as IntelCategory,
-        };
-      })
-      .filter(Boolean) as IntelItem[];
+          type:          (e.category || item.type) as IntelCategory,
+        } as IntelItem;
+      }
+      // No LLM score for this item → heuristic relevance fallback.
+      const h = heuristicScore(item);
+      if (h < HEURISTIC_MIN) return null;
+      return { ...item, relevanceScore: h } as IntelItem;
+    })
+    .filter(Boolean) as IntelItem[];
 
-    return result.length > 0 ? result : items;
-  } catch {
-    return items;
-  }
+  // Most relevant first.
+  scored.sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+
+  // Never blank the brief just because scoring was strict.
+  return scored.length > 0 ? scored : items;
 }
 
 // ── RSS parser ────────────────────────────────────────────────────────────────
@@ -594,7 +756,9 @@ function parseRss(xml: string, source: string, type: IntelCategory): IntelItem[]
       title = title.replace(/\s+-\s+[^-]{2,60}$/, '').trim();
 
       const pubTs = pubDate ? new Date(pubDate).getTime() : Date.now();
-      if (isNaN(pubTs) || Date.now() - pubTs > 48 * 3_600_000) return;
+      // Freshness: keep news published within the last 14 hours — a morning
+      // advisory for an all-day event (e.g. protest till 6pm) must survive.
+      if (isNaN(pubTs) || Date.now() - pubTs > 14 * 3_600_000) return;
 
       const risk   = getRiskLevel(title, type);
       const time   = pubDate ? getRelativeTime(new Date(pubDate)) : 'recently';
@@ -621,14 +785,64 @@ function parseRss(xml: string, source: string, type: IntelCategory): IntelItem[]
 let _cache:   IntelItem[] | null = null;
 let _cacheTs  = 0;
 
-// ── Handles monitored via Groq Scout ─────────────────────────────────────────
-const SCOUT_HANDLES = [
-  'blrcitytraffic', 'BlrCityPolice', 'BBMPCOMM', 'Bescom_Bangalore', 'bwssb_bangalore',
-  'NammaMetro', 'BMTC_BENGALURU', 'GHMCOnline', 'mybmc', 'MumbaiPolice',
-  'dtptraffic', 'OfficialDMRC', 'NDRFHQ', 'CPCB_OFFICIAL', 'Indiametdept',
-  'NHM_Karnataka', 'KPTCL_Official',
-];
+// ── Monitored X / Twitter handles → city ─────────────────────────────────────
+// EDIT THIS MAP to add/remove handles. Each handle is pinned to one of the 5
+// cities, so its tweets are geofenced by handle (not by text) and always kept.
+// Backend (/api/twitter-intel) resolves them via Twitter API → Apify →
+// Groq → Nitter → RSS-Bridge → RSSHub → Google News.
+// Institutional civic / utility / police / transport handles ONLY.
+// (Prominent-figure / political handles deliberately excluded — we only want
+//  actionable advisories, not personal political posts.)
+const HANDLE_CITY: Record<string, SupportedCity> = {
+  // ── Bengaluru ──
+  NammaBESCOM: 'BANGALORE', BlrCityPolice: 'BANGALORE', blrcitytraffic: 'BANGALORE',
+  // ── Mumbai ──
+  MumbaiPolice: 'MUMBAI', mybmc: 'MUMBAI', MTPHereToHelp: 'MUMBAI', myBESTBus: 'MUMBAI',
+  // ── Hyderabad ──
+  hydcitypolice: 'HYDERABAD', HYDTP: 'HYDERABAD', Ghmconline: 'HYDERABAD', tgspdcl: 'HYDERABAD',
+  // ── Delhi ──
+  DelhiPolice: 'DELHI', dtptraffic: 'DELHI', OfficialDMRC: 'DELHI',
+  // ── Chennai ── (no handles supplied yet — add here when available)
+};
 
+const SCOUT_HANDLES = Object.keys(HANDLE_CITY);
+
+// Lower-cased lookup so we can resolve a handle regardless of returned casing.
+const HANDLE_CITY_LC: Record<string, SupportedCity> = Object.fromEntries(
+  Object.entries(HANDLE_CITY).map(([h, c]) => [h.toLowerCase(), c]),
+);
+
+/** Resolve the city for a handle-sourced item: handle map first, then text. */
+function resolveHandleCity(source: string, headline: string): SupportedCity | null {
+  const h = source.replace(/^@/, '').toLowerCase();
+  return HANDLE_CITY_LC[h] ?? resolveCityFromText(`${headline} ${source}`);
+}
+
+type RawHandleTweet = { headline: string; category?: string; riskLevel?: string; source: string; time?: string };
+
+function mapHandleTweet(it: RawHandleTweet): (IntelItem & { _pin: true; _city: SupportedCity }) | null {
+  const city = resolveHandleCity(it.source, it.headline);
+  if (!city) return null; // not tied to a monitored city → drop
+  const [lat, lon] = CITY_COORDS[city];
+  let time = it.time || 'just now';
+  if (it.time) {
+    const d = new Date(it.time);
+    if (!isNaN(d.getTime())) time = getRelativeTime(d);
+  }
+  return {
+    id:        `scout-${Math.random().toString(36).slice(2, 9)}`,
+    headline:  it.headline,
+    source:    it.source.startsWith('@') ? it.source : `@${it.source}`,
+    time,
+    type:      (it.category || 'general') as IntelCategory,
+    riskLevel: (it.riskLevel || 'info') as IntelItem['riskLevel'],
+    lat, lon,
+    _pin: true,
+    _city: city,
+  };
+}
+
+/** Live X-handle tweets via the backend aggregator (/api/twitter-intel). */
 async function fetchHandleIntel(): Promise<IntelItem[]> {
   try {
     const resp = await fetch('/api/twitter-intel', {
@@ -640,23 +854,143 @@ async function fetchHandleIntel(): Promise<IntelItem[]> {
     if (!resp.ok) return [];
     const { items } = await resp.json();
     if (!items?.length) return [];
-    return items.map((it: { headline: string; category: string; riskLevel: string; source: string }) => ({
-      id:        `scout-${Math.random().toString(36).slice(2, 9)}`,
-      headline:  it.headline,
-      source:    `@${it.source}`,
-      time:      'just now',
-      type:      (it.category || 'general') as IntelCategory,
-      riskLevel: (it.riskLevel || 'info') as IntelItem['riskLevel'],
-    }));
+    return (items as RawHandleTweet[]).map(mapHandleTweet).filter(Boolean) as IntelItem[];
   } catch {
     return [];
   }
+}
+
+/**
+ * Optional static handle feed produced by the Python route (Scweet/Twikit).
+ * The script writes frontend/public/twitter-intel.json as { items:[...] }; we
+ * load it at /twitter-intel.json (cache-busted) and ingest it like live tweets.
+ */
+async function fetchStaticHandleIntel(): Promise<IntelItem[]> {
+  try {
+    const resp = await fetch(`/twitter-intel.json?t=${Math.floor(Date.now() / 60000)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const items = (Array.isArray(data) ? data : data.items) as RawHandleTweet[] | undefined;
+    if (!items?.length) return [];
+    return items.map(mapHandleTweet).filter(Boolean) as IntelItem[];
+  } catch {
+    return [];
+  }
+}
+
+// ── Open-Meteo weather alerts (no API key, CORS-enabled) ─────────────────────
+// Turns the hourly forecast for each of the 5 cities into operational alerts
+// (heavy rain, storm/wind, heatwave). Only emits when a threshold is crossed —
+// calm weather produces nothing.
+
+function titleCaseCity(c: string): string {
+  return c.charAt(0) + c.slice(1).toLowerCase();
+}
+
+async function fetchCityWeatherAlerts(city: SupportedCity): Promise<IntelItem[]> {
+  const [lat, lon] = CITY_COORDS[city];
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&hourly=rain,showers,wind_gusts_10m,wind_speed_10m` +
+    `&forecast_days=2&timezone=auto`;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const h = data?.hourly;
+    if (!h?.time?.length) return [];
+
+    const n = Math.min(24, h.time.length); // next ~24 hours
+    let maxRain = 0, maxGust = 0;
+    for (let i = 0; i < n; i++) {
+      const rain = (h.rain?.[i] ?? 0) + (h.showers?.[i] ?? 0);
+      if (rain > maxRain) maxRain = rain;
+      const g = h.wind_gusts_10m?.[i] ?? 0;
+      if (g > maxGust) maxGust = g;
+    }
+
+    const C = titleCaseCity(city);
+    const alerts: IntelItem[] = [];
+    const push = (headline: string, riskLevel: IntelItem['riskLevel']) => {
+      alerts.push({
+        id: `wx-${city}-${Math.random().toString(36).slice(2, 7)}`,
+        headline,
+        source: 'OPEN-METEO',
+        time: 'forecast',
+        url: `https://open-meteo.com/en/docs#latitude=${lat}&longitude=${lon}`,
+        type: 'infra',
+        riskLevel,
+        lat, lon,
+        ...( { _pin: true, _city: city } ),
+      } as IntelItem);
+    };
+
+    // Rainfall (rain + showers, mm/h)
+    if (maxRain >= 15)      push(`Very heavy rain forecast for ${C} — up to ${maxRain.toFixed(1)} mm/h within 24h (flooding risk)`, 'critical');
+    else if (maxRain >= 7)  push(`Heavy rain forecast for ${C} — up to ${maxRain.toFixed(1)} mm/h within 24h`, 'high');
+    else if (maxRain >= 2.5)push(`Rain showers expected in ${C} — up to ${maxRain.toFixed(1)} mm/h within 24h`, 'medium');
+
+    // Wind gusts (km/h) — storm / squall
+    if (maxGust >= 60)      push(`Storm-force winds forecast for ${C} — gusts up to ${Math.round(maxGust)} km/h (weather warning)`, 'high');
+    else if (maxGust >= 40) push(`Gusty winds / squall forecast for ${C} — gusts up to ${Math.round(maxGust)} km/h (weather advisory)`, 'medium');
+
+    return alerts;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchWeatherAlerts(): Promise<IntelItem[]> {
+  const settled = await Promise.allSettled(
+    SUPPORTED_CITIES.map(c => fetchCityWeatherAlerts(c as SupportedCity)),
+  );
+  const out: IntelItem[] = [];
+  settled.forEach(r => { if (r.status === 'fulfilled') out.push(...r.value); });
+  return out;
 }
 
 export async function fetchLiveIntel(): Promise<IntelItem[]> {
   if (_cache && Date.now() - _cacheTs < CACHE_TTL) return _cache;
 
   const allRaw: IntelItem[] = [];
+
+  // X/Twitter handle tweets: the live backend aggregator (/api/twitter-intel)
+  // is back — it now leads with RSS-verified Nitter mirrors, caches results
+  // server-side for 10 min, and falls back to Apify/Twitter API/Groq. The
+  // optional static Python output (/twitter-intel.json) is still ingested too.
+  const handlePromise = Promise.allSettled([fetchHandleIntel(), fetchStaticHandleIntel()])
+    .then(results => {
+      results.forEach(r => { if (r.status === 'fulfilled') allRaw.push(...r.value); });
+    });
+
+  // Live Open-Meteo weather alerts (heavy rain / storm / heatwave per city).
+  const weatherPromise = fetchWeatherAlerts()
+    .then(items => { allRaw.push(...items); })
+    .catch(() => { /* ignore */ });
+
+  // City-pinned community/forum feeds (Reddit, Citizen Matters, Team-BHP, LBB).
+  const pinnedPromise = Promise.allSettled(
+    PINNED_CITY_FEEDS.map(async (feed) => {
+      try {
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 9000);
+        const resp = await fetch(feed.url, { signal: ctrl.signal });
+        clearTimeout(tid);
+        if (!resp.ok) return;
+        const xml = await resp.text();
+        if (!xml || xml.length < 80) return;
+        const [lat, lon] = CITY_COORDS[feed.city];
+        for (const it of parseRss(xml, feed.source, feed.type)) {
+          (it as IntelItem & { _pin?: boolean; _city?: SupportedCity })._pin = true;
+          (it as IntelItem & { _pin?: boolean; _city?: SupportedCity })._city = feed.city;
+          it.lat = lat; it.lon = lon;
+          allRaw.push(it);
+        }
+      } catch { /* ignore */ }
+    }),
+  );
 
   // Run RSS feeds
   await Promise.allSettled(
@@ -678,9 +1012,13 @@ export async function fetchLiveIntel(): Promise<IntelItem[]> {
     }),
   );
 
-  // Deduplicate by headline prefix and cap major topics to prevent flooding (max 3 per topic)
+  // Ensure handle/static tweets + pinned community feeds + weather have landed.
+  await Promise.all([handlePromise, pinnedPromise, weatherPromise]);
+
+  // Deduplicate by headline prefix. (Topic caps are applied LATER, after the
+  // relevance gate + geofence — otherwise out-of-scope national items consume
+  // the per-topic slots and squeeze out monitored-city news.)
   const seen = new Set<string>();
-  const topicCounts: Record<string, number> = {};
 
   const getTopicKey = (h: string): string | null => {
     const lh = h.toLowerCase();
@@ -701,13 +1039,6 @@ export async function fetchLiveIntel(): Promise<IntelItem[]> {
     const key = item.headline.toLowerCase().replace(/\s+/g, ' ').slice(0, 60);
     if (seen.has(key)) return false;
     seen.add(key);
-
-    const topic = getTopicKey(item.headline);
-    if (topic) {
-      const count = topicCounts[topic] || 0;
-      if (count >= 3) return false;
-      topicCounts[topic] = count + 1;
-    }
     return true;
   });
 
@@ -720,10 +1051,46 @@ export async function fetchLiveIntel(): Promise<IntelItem[]> {
   // Step 1: translate any Indic-script headlines to English
   const translated = await translateItems(deduped);
 
-  // Step 2: Groq location filter + enrichment (top 40)
-  const toEnrich = translated.slice(0, 40);
+  // Step 2: STRICT 5-CITY GEOFENCE — keep only items whose (translated) headline
+  // is attributable to Bangalore / Delhi / Hyderabad / Mumbai / Chennai. This
+  // drops national-only items (Kerala monsoon, "World News", UPSC editorials)
+  // and foreign items (Italy / Christmas Island earthquakes) at the source.
+  const gatedBefore = translated.length;
+  const gated = translated.reduce<IntelItem[]>((acc, item) => {
+    // Relevance gate first — drop catalog/lifestyle/jobs/markets/political noise.
+    if (!passesRelevance(item.headline)) return acc;
+    // Handle-sourced tweets are already pinned to a city — keep unconditionally.
+    const pin = (item as IntelItem & { _pin?: boolean; _city?: SupportedCity });
+    if (pin._pin && pin._city) {
+      acc.push({ ...item, ...extractCoords(item.headline, pin._city), _city: pin._city } as IntelItem);
+      return acc;
+    }
+    const hay = `${item.headline} ${item.source ?? ''}`;
+    const city = resolveCityFromText(hay);
+    if (!city) return acc; // not tied to a monitored city → drop
+    acc.push({ ...item, ...extractCoords(item.headline, city), _city: city } as IntelItem);
+    return acc;
+  }, []);
+  console.log(`[IntelService] Geofence: kept ${gated.length}/${gatedBefore} items (5-city scope)`);
+
+  // Step 2b: topic caps — applied AFTER gating so only in-scope items consume
+  // slots, and scoped per topic+city (severity-sorted, so the worst 3 survive).
+  const topicCounts: Record<string, number> = {};
+  const capped = gated.filter((item) => {
+    const topic = getTopicKey(item.headline);
+    if (!topic) return true;
+    const cityKey = (item as IntelItem & { _city?: string })._city ?? 'NATIONAL';
+    const key = `${topic}:${cityKey}`;
+    const count = topicCounts[key] || 0;
+    if (count >= 3) return false;
+    topicCounts[key] = count + 1;
+    return true;
+  });
+
+  // Step 3: Groq location filter + enrichment (top 40)
+  const toEnrich = capped.slice(0, 40);
   const enriched = await enrichWithGroq(toEnrich);
-  const rest     = translated.slice(40);
+  const rest     = capped.slice(40);
 
   _cache   = [...enriched, ...rest];
   _cacheTs = Date.now();

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "x-live",
+  "description": "Restricted capabilities for the external-origin X Live window (x.com). Window controls only; no access to app commands or secrets.",
+  "windows": ["x-live"],
+  "permissions": ["core:window:default"]
+}

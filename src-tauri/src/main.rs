@@ -18,6 +18,8 @@ use serde_json::{Map, Value};
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Manager, RunEvent, Webview, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
+mod x_live;
+
 const DEFAULT_LOCAL_API_PORT: u16 = 46123;
 const KEYRING_SERVICE: &str = "world-monitor";
 const LOCAL_API_LOG_FILE: &str = "local-api.log";
@@ -647,21 +649,11 @@ async fn open_youtube_login(app: AppHandle) -> Result<(), String> {
 }
 
 fn build_app_menu(handle: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let settings_item = MenuItem::with_id(
-        handle,
-        MENU_FILE_SETTINGS_ID,
-        "Settings...",
-        true,
-        Some("CmdOrCtrl+,"),
-    )?;
-    let separator = PredefinedMenuItem::separator(handle)?;
+    // Settings / Live-channels were World Monitor features; their HTML has been
+    // removed for DASHINT, so the File menu keeps just Quit. (The now-unused
+    // open_settings_window/open_live_channels helpers remain as dead code.)
     let quit_item = PredefinedMenuItem::quit(handle, Some("Quit"))?;
-    let file_menu = Submenu::with_items(
-        handle,
-        "File",
-        true,
-        &[&settings_item, &separator, &quit_item],
-    )?;
+    let file_menu = Submenu::with_items(handle, "File", true, &[&quit_item])?;
 
     let about_metadata = AboutMetadata {
         name: Some("World Monitor".into()),
@@ -1289,7 +1281,9 @@ fn main() {
             close_live_channels_window,
             open_url,
             open_youtube_login,
-            fetch_polymarket
+            fetch_polymarket,
+            x_live::x_open_handle,
+            x_live::x_sign_in
         ])
         .setup(|app| {
             // Load persistent cache into memory (avoids 14MB file I/O on every IPC call)

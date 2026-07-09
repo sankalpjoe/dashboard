@@ -1,0 +1,42 @@
+<!-- Additional hardening cases targeting v2 rule changes. Append to existing eval set. -->
+<eval_set_additions>
+  <!-- Strike homonym trap -->
+  <test_case id="refine_005">
+    <input>"Air force confirms a precision strike on the depot at dawn; workers at the nearby plant evacuated."</input>
+    <expected_output>
+      {"is_civil_unrest": false, "event_type": "None", "confidence_score": 0.05,
+       "extraction": null,
+       "filtering_justification": "Military strike, not a labor action; homonym excluded."}
+    </expected_output>
+  </test_case>
+
+  <!-- Strike vs Protest precedence (mirror of refine_004) -->
+  <test_case id="refine_006">
+    <input>"Nurses at St. Mary's walked off shift at 6am and are now picketing the main entrance over staffing ratios."</input>
+    <expected_output>
+      {"is_civil_unrest": true, "event_type": "Strike", "confidence_score": 0.95,
+       "extraction": {"location": "St. Mary's (hospital)", "trigger": "staffing ratios", "impact": "Nurses off shift, picket at main entrance"},
+       "filtering_justification": "Labor withdrawal is the root action; picket is part of the strike."}
+    </expected_output>
+  </test_case>
+
+  <!-- Borderline confidence: vague, unverifiable -->
+  <test_case id="refine_007">
+    <input>"Hearing there might be some kind of demonstration downtown later?? anyone know whats going on"</input>
+    <expected_output>
+      {"is_civil_unrest": false, "event_type": "None", "confidence_score": 0.40,
+       "extraction": null,
+       "filtering_justification": "Unconfirmed rumor below the 0.75 threshold; downgraded to protect data integrity."}
+    </expected_output>
+  </test_case>
+
+  <!-- Riot/clash maps to Protest per precedence rule -->
+  <test_case id="refine_008">
+    <input>"Demonstrators clashed with riot police outside the parliament in Quito tonight after the subsidy cuts were announced; tear gas deployed, two streets closed."</input>
+    <expected_output>
+      {"is_civil_unrest": true, "event_type": "Protest", "confidence_score": 0.95,
+       "extraction": {"location": "Parliament, Quito, Ecuador", "trigger": "subsidy cuts", "impact": "Clashes with police, tear gas, two streets closed"},
+       "filtering_justification": "Physical demonstration with police clashes; violence recorded in impact."}
+    </expected_output>
+  </test_case>
+</eval_set_additions>

@@ -2,8 +2,9 @@ import { getCorsHeaders, isDisallowedOrigin } from '../_cors.js';
 
 export const config = { runtime: 'edge' };
 
-const GROQ_KEY = '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';
-const GROQ_MODEL = 'qwen/qwen3-32b';
+const GROQ_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+// qwen/qwen3-32b is deprecated on Groq (shutdown 2026-07-17).
+const GROQ_MODEL = process.env.VITE_INTEL_GROQ_MODEL || 'openai/gpt-oss-120b';
 
 const INTEL_SYSTEM = `You are a strict India-only crisis intelligence filter for a city monitoring dashboard.
 
@@ -30,7 +31,7 @@ HEADLINE: concise English rewrite, max 20 words, include city or region name.
 Return JSON: {"items": [{"score": number, "headline": string, "summary": string[], "category": string, "sentiment": number}]}
 Same order as input. No markdown, no extra keys.`;
 
-async function callGroqBatch(headlines) {
+async function callGroqBatch(headlines, attempt = 0) {
   if (!GROQ_KEY) return null;
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -52,8 +53,27 @@ async function callGroqBatch(headlines) {
       }),
       signal: AbortSignal.timeout(20000),
     });
+    // Groq rate-limit (429) / transient overload (503): back off and retry a few
+    // times (respecting Retry-After) instead of failing the whole batch.
+    if ((resp.status === 429 || resp.status === 503) && attempt < 3) {
+      const ra = Number(resp.headers.get('retry-after'));
+      const waitMs = Number.isFinite(ra) && ra > 0
+        ? Math.min(ra * 1000, 15000)
+        : Math.min(8000, 500 * 2 ** attempt);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return callGroqBatch(headlines, attempt + 1);
+    }
+    if (!resp.ok) {
+      console.warn(`callGroqBatch: Groq returned HTTP ${resp.status}`);
+      return null;
+    }
     const data = await resp.json();
     const content = data.choices?.[0]?.message?.content;
+    // Guard: content can be undefined if Groq returned an error/empty response
+    if (!content || typeof content !== 'string') {
+      console.warn('callGroqBatch: empty content from Groq, skipping batch');
+      return null;
+    }
     const parsed = JSON.parse(content);
     return parsed.items || parsed;
   } catch (err) {
@@ -61,6 +81,7 @@ async function callGroqBatch(headlines) {
     return null;
   }
 }
+
 
 export default async function handler(req) {
   const cors = getCorsHeaders(req);
@@ -74,11 +95,19 @@ export default async function handler(req) {
     for (let i = 0; i < headlines.length; i += BATCH_SIZE) {
       batches.push(headlines.slice(i, i + BATCH_SIZE));
     }
-    const results = await Promise.all(batches.map(batch => callGroqBatch(batch)));
+    // Run batches sequentially (not Promise.all) so we don't burst past Groq's
+    // per-minute rate limit; callGroqBatch backs off on 429 internally.
+    const results = [];
+    for (const batch of batches) {
+      results.push(await callGroqBatch(batch));
+    }
     return new Response(JSON.stringify({ items: results.flat().filter(Boolean) }), {
       status: 200, headers: { ...cors, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: cors });
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+      headers: cors,
+    });
   }
 }

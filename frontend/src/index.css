@@ -26,7 +26,7 @@
     --border: 0 0% 88%;
     --input: 0 0% 88%;
     --ring: 0 0% 0%;
-    --radius: 0px;
+    --radius: 6px;
 
     /* ── App-specific tokens ───────────────────────────────────────── */
     --bg-light:       #f5f5f5;
@@ -58,13 +58,21 @@
 @layer base {
   * {
     @apply border-border;
-    border-radius: 0 !important;
   }
   body {
-    background: #ffffff;
-    color: #000000;
+    background: #fafafa;
+    color: #111111;
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button {
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease,
+                box-shadow 0.12s ease, opacity 0.12s ease;
+  }
+  :focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.5);
+    outline-offset: 1px;
   }
 }
 
@@ -83,10 +91,14 @@
 }
 
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar        { width: 4px; height: 4px; }
-::-webkit-scrollbar-track  { background: #f0f0f0; }
-::-webkit-scrollbar-thumb  { background: #cccccc; }
-::-webkit-scrollbar-thumb:hover { background: #999999; }
+::-webkit-scrollbar        { width: 8px; height: 8px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #d4d4d0; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #a8a8a4; background-clip: padding-box; }
+
+/* ── Card hover lift ─────────────────────────────────────────────────────── */
+.card-lift { transition: box-shadow 0.15s ease, transform 0.15s ease, background 0.12s ease; }
+.card-lift:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

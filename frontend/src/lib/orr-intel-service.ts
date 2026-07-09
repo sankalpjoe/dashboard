@@ -11,9 +11,9 @@
  *  PREDICTED   — Frequency-model synthetic events (day+hour pattern engine)
  */
 
-// ─── API keys (from env) ───────────────────────────────────────────────────────
-const GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY as string | undefined;
-const GROQ_KEY   = (import.meta as any).env?.VITE_GROQ_API_KEY   as string | undefined;
+// ─── LLM access ───────────────────────────────────────────────────────────────
+// All LLM calls go through the server-side proxy — no API keys in the bundle.
+const GROQ_CHAT_URL = '/api/groq-chat';
 
 // ─── HQ anchor ────────────────────────────────────────────────────────────────
 export const HQ_LAT = 12.9352;
@@ -247,41 +247,38 @@ async function translateViaGoogle(text: string, sourceLang: 'kn' | 'hi'): Promis
   } catch { return null; }
 }
 
-/** Translate via Gemini Flash (higher quality, needs API key). Falls back to null. */
-async function translateViaGemini(text: string, sourceLang: 'kn' | 'hi'): Promise<string | null> {
-  if (!GEMINI_KEY) return null;
+/** Translate via the server-side LLM proxy (was Gemini with a client-side key). */
+async function translateViaLlm(text: string, sourceLang: 'kn' | 'hi'): Promise<string | null> {
   const langLabel = sourceLang === 'kn' ? 'Kannada' : 'Hindi';
   try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `Translate this ${langLabel} news headline to concise English (max 20 words). Return ONLY the English translation:\n\n${text}`,
-            }],
-          }],
-          generationConfig: { temperature: 0, maxOutputTokens: 60 },
-        }),
-      }
-    );
+    const resp = await fetch(GROQ_CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        temperature: 0,
+        max_tokens: 60,
+        messages: [{
+          role: 'user',
+          content: `Translate this ${langLabel} news headline to concise English (max 20 words). Return ONLY the English translation:\n\n${text}`,
+        }],
+      }),
+    });
     if (!resp.ok) return null;
     const data = await resp.json();
-    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const translated = data.choices?.[0]?.message?.content?.trim();
     return translated || null;
   } catch { return null; }
 }
 
-/** Two-tier translation: Google Translate first (always available), Gemini as quality fallback. */
+/** Two-tier translation: Google Translate first (always available), LLM proxy as quality fallback. */
 async function translateHeadline(text: string, sourceLang: 'kn' | 'hi'): Promise<string | null> {
   // Tier 1: Google Translate — fast, free, no key needed
   const googleResult = await translateViaGoogle(text, sourceLang);
   if (googleResult) return googleResult;
-  // Tier 2: Gemini Flash — higher quality but needs API key
-  return translateViaGemini(text, sourceLang);
+  // Tier 2: LLM via server proxy — higher quality
+  return translateViaLlm(text, sourceLang);
 }
 
 // ─── Severity scorer (S1-S5) ──────────────────────────────────────────────────
@@ -354,6 +351,29 @@ function classifyORR(headline: string): ORRCategory {
 
 // ─── Groq crisis-only filter ─────────────────────────────────────────────────
 
+/** Hard-block patterns applied BEFORE sending to Groq — saves tokens and stops clear junk */
+const ORR_JUNK_PATTERNS = [
+  // Sports / Entertainment
+  /\b(cricket|ipl|t20|odi|test match|world cup|bollywood|film|movie|celebrity|oscars|grammy|trophy|player|squad|batting|bowling|wicket|innings|runs)\b/i,
+  // Gaming / Anime
+  /\b(anime|manga|esports|mobile game|game (launch|update|event)|dlc|patch notes|battle pass|gacha)\b/i,
+  // Consumer noise
+  /\b(smartphone (launch|price|sale)|unboxing|fashion week|beauty tips|recipe|cooking|travel tips|top \d+|how to|best places)\b/i,
+  // Finance noise (non-crisis)
+  /\b(sensex closes|nifty closes|ipo (subscribed|opens)|quarterly (earnings|results)|profit rises|revenue grows|share price)\b/i,
+  // Pure politics (not security)
+  /\b(opinion poll|exit poll|party manifesto|election rally|campaign speech|mla wins|mp wins|lok sabha result|assembly election result|by-election result|cabinet reshuffle)\b/i,
+  // Celebratory / ceremonial fluff
+  /\b(inaugurat|felicitat|congratulat|foundation stone|award ceremony|honoured by|felicitation|wedding|reception)\b/i,
+  // International sports / global non-India
+  /\b(nba|nfl|mlb|nhl|premier league|bundesliga|la liga|formula 1|f1 (race|grand prix)|wimbledon|us open|french open)\b/i,
+];
+
+/** Returns true if the headline is clearly junk and should be dropped pre-Groq */
+function isORRJunk(headline: string): boolean {
+  return ORR_JUNK_PATTERNS.some(p => p.test(headline));
+}
+
 interface GroqORRResult {
   id: string;
   score: number;      // 1-10, crisis relevance
@@ -370,33 +390,42 @@ For each item in the JSON array, return:
   - 7-8:  large riot, protest, bandh, strike, VIP disruption, disease outbreak, major flood/earthquake IN INDIA
   - 5-6:  road block, power/water outage, heavy rain advisory, traffic diversion, crime, health advisory, Bangalore civic news
   - 3-4:  general India-national news, Karnataka/Bangalore news with low urgency, tweets from official Bangalore accounts
-  - 1-2:  DROP only — ANY event outside of India (e.g. London, USA, Europe, etc.), international protests/wars, politics, political debates, celebrity gossip, cricket match scores, IPO announcements, Bollywood, anime, gaming, fashion, weddings, reality TV, standard sports, generic business news
+  - 1-2:  DROP — ANY of the following:
+          • ANY event outside of India (London, USA, Europe, Middle East wars unrelated to India, etc.)
+          • International protests, wars, elections
+          • Cricket scores, IPL, T20, sports tournaments
+          • Bollywood, celebrity gossip, film awards, weddings
+          • Gaming, anime, esports, product launches, smartphone reviews
+          • Opinion polls, election campaign speeches, party rally news
+          • Inauguration ceremonies, felicitation events
+          • Financial results, IPO listings, stock market summaries
 - "category": exactly one of:
     armed_conflict | terrorism | embassy_alert | civil_disturbance | transit | climate | disease | infrastructure | traffic | general
 
 LOCATION SCORING RULES:
-  ALWAYS score 1-2 (DROP): ANY news outside of India, including international protests, wars, and elections.
+  ALWAYS score 1-2 (DROP): ANY news outside of India. No exceptions.
+  ALWAYS score 1-2 (DROP): Cricket, IPL, sports scores, Bollywood, entertainment.
   ALWAYS score 7-8+: Any protest, strike, dharna, or bandh anywhere IN INDIA.
-  ALWAYS score 5+: Events explicitly about Bangalore, Bengaluru, Karnataka, ORR, Outer Ring Road, or nearby areas (Bellandur, Whitefield, Marathahalli, HSR, Koramangala, Silk Board, Electronic City, Sarjapur).
-  ALWAYS score 5+: Content from official Bangalore city accounts — BESCOM power updates, BWSSB water supply, BBMP civic, Namma Metro, BMTC — even if city not explicitly mentioned.
-  ALWAYS score 5+: Armed conflict, terrorism, embassy/consulate security alerts in India.
-  Score 3-4: India-national events (other cities) with potential national-level significance.
-  DO NOT drop items just because they are short or look like social media posts — official utility tweets are valuable.
+  ALWAYS score 5+: Events about Bangalore, Bengaluru, Karnataka, ORR, or nearby areas (Bellandur, Whitefield, Marathahalli, HSR, Koramangala, Silk Board, Electronic City, Sarjapur).
+  ALWAYS score 5+: Official Bangalore city accounts — BESCOM power updates, BWSSB water supply, BBMP civic, Namma Metro, BMTC — even if city not explicitly mentioned.
+  ALWAYS score 5+: Armed conflict, terrorism, embassy/consulate security alerts IN INDIA.
+  Score 3-4: India-national events (other cities) with national-level significance.
+  DO NOT drop items because they are short or look like social media posts — official utility tweets are valuable.
 
 Return ONLY a valid JSON object: { "items": [ {id, score, category}, ... ] }. No markdown.`;
 
 async function callGroqORR(
   items: Array<{ id: string; headline: string }>
 ): Promise<GroqORRResult[] | null> {
-  const QWEN_KEY = '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';
   if (!items.length) return null;
   try {
-    const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const resp = await fetch(GROQ_CHAT_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${QWEN_KEY}` },
+      headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
-        model: 'qwen/qwen3-32b',
+        // qwen/qwen3-32b deprecated on Groq (shutdown 2026-07-17)
+        model: 'openai/gpt-oss-120b',
         response_format: { type: 'json_object' },
         temperature: 0.6,
         max_tokens: 4096,
@@ -455,7 +484,7 @@ async function enrichWithGroqORR(events: ORREvent[]): Promise<ORREvent[]> {
         const scoreMap = new Map(results.map(r => [r.id, r]));
         for (const ev of enBatch) {
           const r = scoreMap.get(ev.id);
-          if (!r || r.score < 3) continue; // only drop clear noise (score 1-2)
+          if (!r || r.score <= 3) continue; // drop score ≤3 — score 4+ is kept
           const updated: ORREvent = { ...ev };
           if (r.category) updated.category = r.category;
           groqKept.push(updated);
@@ -1002,6 +1031,9 @@ function parseRssToORR(
 
       if (!title || title.toLowerCase().includes('google')) return;
 
+      // Pre-Groq hard junk filter — save tokens, remove clear noise immediately
+      if (isORRJunk(title)) return;
+
       const ts = pubDate ? new Date(pubDate).getTime() : Date.now();
       if (Date.now() - ts > 48 * 3_600_000) return;  // drop items > 48h old
 
@@ -1057,7 +1089,7 @@ function parseRssToORR(
 
 let _cache: ORRIntelResult | null = null;
 let _cacheTs = 0;
-const CACHE_TTL = 5 * 60_000; // 5 minutes
+const CACHE_TTL = 90_000; // 90 seconds — aligns with UI auto-refresh interval
 
 export async function fetchORRIntel(force = false): Promise<ORRIntelResult> {
   if (!force && _cache && Date.now() - _cacheTs < CACHE_TTL) return _cache;

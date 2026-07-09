@@ -1,4 +1,4 @@
-// Non-sebuf: returns XML/HTML, stays as standalone Vercel function
+// Non-sebuf: returns XML/HTML, stays as standalone Vercel function.
 import { getCorsHeaders, isDisallowedOrigin } from './_cors.js';
 import { validateApiKey } from './_api-key.js';
 import { checkRateLimit } from './_rate-limit.js';
@@ -222,8 +222,9 @@ const ALLOWED_DOMAINS = [
   // India — official government alerts
   'pib.gov.in', 'www.mea.gov.in', 'cert-in.org.in',
   'mausam.imd.gov.in', 'cpcb.nic.in', 'ndma.gov.in',
-  // Nitter instances — Twitter/X handle RSS feeds
-  'nitter.poast.org', 'nitter.privacydev.net', 'nitter.net',
+  // Nitter instances — Twitter/X handle RSS feeds (RSS-verified 2026-07)
+  'xcancel.com', 'nitter.poast.org', 'nitter.privacyredirect.com', 'nt.vern.cc',
+  'nitter.privacydev.net', 'nitter.net',
   'nitter.1d4.us', 'nitter.kavin.rocks', 'nitter.unixfox.eu',
   'rsshub.app',
   'www.twz.com',
@@ -353,6 +354,42 @@ const ALLOWED_DOMAINS = [
   'www.newscientist.com',
 ];
 
+// ── In-memory feed cache ─────────────────────────────────────────────────────
+// Fresh for 5 min (a dashboard refresh re-uses the last fetch instead of
+// re-hitting Google News ~100 times); stale entries are kept for 2 h and
+// served when the upstream fails or rate-limits (429).
+const FEED_CACHE = new Map(); // url → { ts, body, contentType }
+const FEED_FRESH_MS = 5 * 60 * 1000;
+const FEED_STALE_MS = 2 * 60 * 60 * 1000;
+const FEED_CACHE_MAX = 500;
+
+function cacheGet(url, maxAgeMs) {
+  const hit = FEED_CACHE.get(url);
+  if (hit && Date.now() - hit.ts < maxAgeMs) return hit;
+  return null;
+}
+
+function cacheSet(url, body, contentType) {
+  if (FEED_CACHE.size >= FEED_CACHE_MAX) {
+    // Drop the oldest entry (Map preserves insertion order)
+    const oldest = FEED_CACHE.keys().next().value;
+    FEED_CACHE.delete(oldest);
+  }
+  FEED_CACHE.set(url, { ts: Date.now(), body, contentType });
+}
+
+function cachedResponse(hit, corsHeaders, stale = false) {
+  return new Response(hit.body, {
+    status: 200,
+    headers: {
+      'Content-Type': hit.contentType,
+      'Cache-Control': 'public, max-age=180',
+      'X-Feed-Cache': stale ? 'stale' : 'hit',
+      ...corsHeaders,
+    },
+  });
+}
+
 export default async function handler(req) {
   const corsHeaders = getCorsHeaders(req, 'GET, OPTIONS');
 
@@ -409,6 +446,10 @@ export default async function handler(req) {
       });
     }
 
+    // Serve from cache when fresh — avoids hammering Google News on refresh.
+    const freshHit = cacheGet(feedUrl, FEED_FRESH_MS);
+    if (freshHit) return cachedResponse(freshHit, corsHeaders);
+
     // Google News is slow - use longer timeout
     const isGoogleNews = feedUrl.includes('news.google.com');
     const timeout = isGoogleNews ? 20000 : 12000;
@@ -462,6 +503,15 @@ export default async function handler(req) {
 
     const data = await response.text();
     const isSuccess = response.status >= 200 && response.status < 300;
+
+    if (isSuccess) {
+      cacheSet(feedUrl, data, response.headers.get('content-type') || 'application/xml');
+    } else {
+      // Upstream failed (usually a Google News 429) — fall back to stale cache.
+      const staleHit = cacheGet(feedUrl, FEED_STALE_MS);
+      if (staleHit) return cachedResponse(staleHit, corsHeaders, true);
+    }
+
     return new Response(data, {
       status: response.status,
       headers: {
@@ -474,6 +524,10 @@ export default async function handler(req) {
       },
     });
   } catch (error) {
+    // Network failure / timeout — serve stale cache if we have it.
+    const staleHit = cacheGet(feedUrl, FEED_STALE_MS);
+    if (staleHit) return cachedResponse(staleHit, corsHeaders, true);
+
     const isTimeout = error.name === 'AbortError';
     const isGnews = feedUrl.includes('news.google.com');
     // Downgrade Google News failures to warn — they're rate-limited frequently

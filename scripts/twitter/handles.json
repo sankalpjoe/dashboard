@@ -1,0 +1,19 @@
+{
+  "_comment": "Institutional civic/utility/police/transport handles ONLY (advisory feeds). Keep in sync with HANDLE_CITY in frontend/src/lib/intel-service.ts. Political/prominent-figure handles are intentionally excluded.",
+  "handles": {
+    "NammaBESCOM": "BANGALORE",
+    "BlrCityPolice": "BANGALORE",
+    "blrcitytraffic": "BANGALORE",
+    "MumbaiPolice": "MUMBAI",
+    "mybmc": "MUMBAI",
+    "MTPHereToHelp": "MUMBAI",
+    "myBESTBus": "MUMBAI",
+    "hydcitypolice": "HYDERABAD",
+    "HYDTP": "HYDERABAD",
+    "Ghmconline": "HYDERABAD",
+    "tgspdcl": "HYDERABAD",
+    "DelhiPolice": "DELHI",
+    "dtptraffic": "DELHI",
+    "OfficialDMRC": "DELHI"
+  }
+}

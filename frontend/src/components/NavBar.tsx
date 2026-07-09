@@ -33,13 +33,16 @@ const NavBar = ({
   return (
     <div style={{
       height: 'var(--nav-h)',
-      background: '#ffffff',
-      borderBottom: '1px solid #e5e5e5',
+      background: 'rgba(255,255,255,0.92)',
+      backdropFilter: 'blur(8px)',
+      borderBottom: '1px solid #e7e7e4',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 20px',
       flexShrink: 0,
+      zIndex: 10,
     }}>
       {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>

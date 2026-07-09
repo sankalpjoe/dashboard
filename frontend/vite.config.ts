@@ -52,7 +52,7 @@ function makeApiPlugin(name: string, prefix: string, importPath: string): Plugin
           // Dynamic import — Node resolves relative imports inside the handler
           // correctly because they're relative to the handler file's own location.
           // On Windows, ESM dynamic import() requires a file:// URL, not a bare path
-          const handlerUrl = pathToFileURL(importPath).href;
+          const handlerUrl = pathToFileURL(importPath).href + "?t=" + Date.now();
           const { default: handler } = await import(/* @vite-ignore */ handlerUrl);
           if (typeof handler !== "function") {
             throw new Error(`Handler in ${importPath} did not export a default function`);
@@ -87,11 +87,36 @@ const API_DIR = path.resolve(__dirname, "../api");
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Inject GROQ key from .env.local into process.env so that api/ handlers
-  // (which run as plain Node modules, not Vite modules) can read it.
-  const env = loadEnv(mode, __dirname, "VITE_");
-  if (env.VITE_GROQ_API_KEY && !process.env.GROQ_API_KEY) {
-    process.env.GROQ_API_KEY = env.VITE_GROQ_API_KEY;
+  // Inject server-side keys into process.env so that api/ handlers (which run
+  // as plain Node modules, not Vite modules) can read them in local dev.
+  // Loads BOTH the repo-root .env.local (server keys: Twitter, Apify, Groq,
+  // Upstash) and frontend/.env.local (VITE_ client keys). Root loads first;
+  // frontend values win on conflict.
+  const rootEnv = loadEnv(mode, path.resolve(__dirname, ".."), "");
+  const feEnv   = loadEnv(mode, __dirname, "");
+  const merged  = { ...rootEnv, ...feEnv };
+
+  const SERVER_KEYS = [
+    "GROQ_API_KEY",
+    "TWITTER_BEARER_TOKEN",
+    "TWITTER_CONSUMER_KEY",
+    "TWITTER_CONSUMER_SECRET",
+    "TWITTER_ACCESS_TOKEN",
+    "TWITTER_ACCESS_TOKEN_SECRET",
+    "APIFY_TOKEN",
+    "APIFY_TWITTER_ACTOR",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+    "ACLED_ACCESS_TOKEN",
+    "RSSBRIDGE_INSTANCES",
+    "TWITTER_MAX_AGE_DAYS",
+  ];
+  for (const k of SERVER_KEYS) {
+    if (merged[k] && !process.env[k]) process.env[k] = merged[k];
+  }
+  // Legacy fallback: VITE_GROQ_API_KEY doubles as the server Groq key.
+  if (merged.VITE_GROQ_API_KEY && !process.env.GROQ_API_KEY) {
+    process.env.GROQ_API_KEY = merged.VITE_GROQ_API_KEY;
   }
 
   return {
@@ -207,6 +232,13 @@ export default defineConfig(({ mode }) => {
         "twitter-intel-api",
         "/api/twitter-intel",
         path.join(API_DIR, "twitter-intel.js")
+      ),
+
+      // Site proxy for bypassing X-Frame-Options in iframes
+      makeApiPlugin(
+        "proxy-site-api",
+        "/api/proxy-site",
+        path.join(API_DIR, "proxy-site.js")
       ),
     ].filter(Boolean),
 

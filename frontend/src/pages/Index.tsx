@@ -8,7 +8,7 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState("INTEL");
 
   return (
-    <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff' }}>
+    <div style={{ height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fafafa' }}>
       <ErrorBoundary>
         <NavBar activeTab={activeTab} setActiveTab={setActiveTab} />
       </ErrorBoundary>

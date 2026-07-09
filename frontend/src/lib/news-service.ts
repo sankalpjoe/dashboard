@@ -14,6 +14,8 @@
  *             protest · military · industrial · humanitarian · economic · general
  */
 
+import { isJunk } from './noise-filter';
+
 export interface NewsItem {
     id: string;
     headline: string;
@@ -48,6 +50,15 @@ export interface NewsItem {
     | 'climate_natural_disasters'   // Climate & Natural Disasters
     | 'disease_outbreaks'           // Disease Outbreaks
     | 'other';
+    // 7-group operational risk taxonomy (see classifyRiskGroup)
+    riskGroup?:
+    | 'geopolitical_civil'
+    | 'mobility_infra'
+    | 'aviation_airspace'
+    | 'environmental'
+    | 'public_health'
+    | 'administrative'
+    | 'digital_utility';
     severity: number;
     confidence: 'confirmed' | 'unconfirmed';
     // ── Groq / Llama-3-70B enrichment (added after fetch) ───────────────
@@ -152,9 +163,20 @@ async function enrichWithGroq(items: NewsItem[]): Promise<NewsItem[]> {
 // RSS feed builder helper
 // ---------------------------------------------------------------------------
 const CORE_SOURCES = [
-    'Times of India', 'NDTV', 'Hindustan Times', 'Indian Express', 'The Hindu',
-    'Economic Times', 'Telangana Today', 'Bangalore Mirror',
-    'Prajavani', 'Eenadu', 'Navbharat Times', 'Amar Ujala', 'Dainik Jagran',
+    // English (National)
+    'Times of India', 'The Hindu', 'Hindustan Times', 'Indian Express', 'Economic Times',
+    'NDTV', 'Bangalore Mirror', 'Telangana Today',
+    // Kannada
+    'Vijayavani', 'Vijaya Karnataka', 'Prajavani', 'Udayavani', 'Kannada Prabha',
+    // Marathi
+    'Lokmat', 'Sakal', 'Maharashtra Times', 'Pudhari', 'Loksatta',
+    // Telugu
+    'Eenadu', 'Sakshi', 'Andhra Jyothi', 'Namasthe Telangana', 'V6 Velugu',
+    // Urdu (Hyderabad)
+    'Siasat', 'Munsif', 'Etemaad',
+    // Hindi
+    'Dainik Bhaskar', 'Dainik Jagran', 'Hindustan', 'Amar Ujala', 'Rajasthan Patrika',
+    'Navbharat Times', 'Punjab Kesari',
 ];
 
 function gnews(query: string, window = '6h', sources?: string[]): string {
@@ -184,6 +206,13 @@ function cityFeeds(city: string): { url: string; category: NewsItem['category'] 
         { url: gnews(`${city} (chemical spill OR gas leak OR industrial accident OR explosion OR building collapse OR fire)`, '1d', CORE_SOURCES), category: 'industrial' },
         { url: gnews(`${city} (humanitarian OR refugee OR displacement OR trafficking OR ethnic clash OR famine)`, '1d'), category: 'humanitarian' },
         { url: gnews(`${city} (economic crisis OR market crash OR bank OR supply shortage OR fuel crisis OR power outage)`, '1d', CORE_SOURCES), category: 'economic' },
+        // ── New risk-group subtypes (Mobility, Aviation, Environment, Health, Admin, Utility) ──
+        { url: gnews(`${city} (road closure OR traffic diversion OR metro OR flyover OR bridge construction OR rail strike OR bus strike OR transport strike OR supply chain)`, '1d', CORE_SOURCES), category: 'industrial' },
+        { url: gnews(`${city} (airport OR flight grounded OR flights delayed OR flight cancelled OR NOTAM OR air traffic control OR runway closed OR drone OR airspace OR DGCA)`, '1d', CORE_SOURCES), category: 'industrial' },
+        { url: gnews(`${city} (cloudburst OR heatwave OR AQI OR air quality OR waterlogging OR urban flooding OR wildfire OR weather warning OR IMD alert)`, '1d', CORE_SOURCES), category: 'disaster' },
+        { url: gnews(`${city} (dengue OR cholera OR contamination OR food poisoning OR water contamination OR bio-hazard OR pandemic OR epidemic)`, '1d', CORE_SOURCES), category: 'disaster' },
+        { url: gnews(`${city} (VIP movement OR green corridor OR Section 144 OR curfew imposed OR political rally OR summit OR raid OR tax raid OR labour raid)`, '1d', CORE_SOURCES), category: 'protest' },
+        { url: gnews(`${city} (power grid OR grid collapse OR power cut OR water supply OR fiber cut OR telecom outage OR internet outage OR ransomware OR data breach)`, '1d', CORE_SOURCES), category: 'cyber' },
         { url: gnews(city, '1d', CORE_SOURCES), category: 'general' },
     ];
 }
@@ -364,43 +393,25 @@ const VERNACULAR_FEEDS: { url: string; category: NewsItem['category']; lang: str
         url: gnews('Uttar Pradesh OR Bihar OR Rajasthan (crime OR flood OR disaster OR protest OR accident)', '1d'),
         category: 'general', lang: 'hi', langLabel: '[HI]', city: 'DELHI',
     },
-    // ── Tulu / Mangalore region ──
+    // ── Tamil — Chennai/Tamil Nadu ──
     {
-        url: gnews('Mangalore OR Udupi OR "Dakshina Kannada" (crime OR violence OR blast OR protest OR landslide OR flood)', '1d', CORE_SOURCES),
-        category: 'general', lang: 'tu', langLabel: '[TU]', city: 'MANGALORE',
+        url: gnews('Chennai OR "Tamil Nadu" (flood OR rain OR cyclone OR disaster OR accident OR fire OR building collapse)', '1d'),
+        category: 'disaster', lang: 'ta', langLabel: '[TA]', city: 'CHENNAI',
     },
     {
-        url: gnews('Mangalore Udupi security accident communal', '1d'),
-        category: 'conflict', lang: 'tu', langLabel: '[TU]', city: 'MANGALORE',
-    },
-    // ── Konkani — Karnataka Coastal ──
-    {
-        url: gnews('Mangalore OR Udupi OR Karwar OR Kumta OR Honnavar OR Bhatkal (crime OR protest OR accident OR coastal security OR blast OR fire)', '1d', CORE_SOURCES),
-        category: 'general', lang: 'kon', langLabel: '[KON]', city: 'MANGALORE',
+        url: gnews('Chennai OR "Tamil Nadu" (crime OR riot OR communal OR protest OR bandh OR strike OR blast OR attack)', '1d'),
+        category: 'conflict', lang: 'ta', langLabel: '[TA]', city: 'CHENNAI',
     },
     {
-        url: gnews('Coastal Karnataka security fishing boat accident cyclone warning', '1d'),
-        category: 'disaster', lang: 'kon', langLabel: '[KON]', city: 'MANGALORE',
+        url: gnews('Chennai (traffic OR metro OR road OR airport OR flight OR power cut OR water supply OR AQI OR infrastructure)', '1d'),
+        category: 'general', lang: 'ta', langLabel: '[TA]', city: 'CHENNAI',
     },
-    {
-        url: gnews('Uttara Kannada OR "Dakshina Kannada" OR Udupi (communal OR riot OR protest OR bandh)', '1d'),
-        category: 'conflict', lang: 'kon', langLabel: '[KON]', city: 'MANGALORE',
-    },
-];
-
-const GLOBAL_SOURCES_FEEDS: { url: string; category: NewsItem['category'] }[] = [
-    { url: gnews('India conflict security military', '1d', CORE_SOURCES), category: 'conflict' },
-    { url: gnews('India Pakistan border ceasefire tension 2025 2026', '1d', CORE_SOURCES), category: 'military' },
-    { url: gnews('India disaster outbreak calamity', '1d', CORE_SOURCES), category: 'disaster' },
-    { url: gnews('India cyber security hacking CERT-In', '1d', CORE_SOURCES), category: 'cyber' },
-    { url: gnews('India protest unrest riot crackdown', '1d', CORE_SOURCES), category: 'protest' },
-    { url: gnews('India economy crisis shortage', '1d', CORE_SOURCES), category: 'economic' },
 ];
 
 // ---------------------------------------------------------------------------
 // Supported cities
 // ---------------------------------------------------------------------------
-export const SUPPORTED_CITIES = ['BANGALORE', 'DELHI', 'HYDERABAD', 'MUMBAI', 'CHENNAI', 'KOLKATA'] as const;
+export const SUPPORTED_CITIES = ['BANGALORE', 'DELHI', 'HYDERABAD', 'MUMBAI', 'CHENNAI'] as const;
 export type SupportedCity = typeof SUPPORTED_CITIES[number];
 
 const CITY_FEEDS: Record<SupportedCity, { url: string; category: NewsItem['category'] }[]> = {
@@ -409,7 +420,6 @@ const CITY_FEEDS: Record<SupportedCity, { url: string; category: NewsItem['categ
     HYDERABAD: cityFeeds('Hyderabad'),
     MUMBAI: cityFeeds('Mumbai'),
     CHENNAI: cityFeeds('Chennai'),
-    KOLKATA: cityFeeds('Kolkata'),
 };
 
 // City centre coordinates for map plotting
@@ -420,11 +430,197 @@ export const CITY_COORDS: Record<string, [number, number]> = {
     HYDERABAD: [17.3850, 78.4867],
     CHENNAI: [13.0827, 80.2707],
     KOLKATA: [22.5726, 88.3639],
-    MANGALORE: [12.9141, 74.8560],
-    GOA: [15.2993, 74.1240],
-    PUNE: [18.5204, 73.8567],
-    AHMEDABAD: [23.0225, 72.5714],
 };
+
+// ---------------------------------------------------------------------------
+// STRICT 5-CITY GEO RESOLVER
+// Each article must be attributable to ONE of these 5 cities by its headline
+// content. Items that name a foreign / out-of-scope location (and no in-scope
+// city) are dropped — this is what stops "San Francisco" style leakage where an
+// item is tagged with a city merely because of the feed it came from.
+// ---------------------------------------------------------------------------
+
+// City name aliases + state/region terms + signature localities.
+// Order matters only for tie-breaks; first city with a hit wins.
+const CITY_MATCHERS: { city: SupportedCity; terms: string[] }[] = [
+    {
+        city: 'BANGALORE',
+        terms: [
+            'bangalore', 'bengaluru', 'bengaluru city', 'karnataka', 'namma bengaluru',
+            'electronic city', 'whitefield', 'koramangala', 'indiranagar', 'hsr layout',
+            'marathahalli', 'hebbal', 'yelahanka', 'kr puram', 'mahadevapura', 'bellandur',
+            'outer ring road', 'orr', 'devanahalli', 'kempegowda airport', 'bescom', 'bbmp',
+            'bwssb', 'bmtc', 'ksrtc', 'majestic', 'mg road bengaluru',
+        ],
+    },
+    {
+        city: 'DELHI',
+        terms: [
+            'delhi', 'new delhi', 'ncr', 'noida', 'gurugram', 'gurgaon', 'ghaziabad',
+            'faridabad', 'connaught place', 'dwarka', 'rohini', 'saket', 'igi airport',
+            'indira gandhi international', 'lutyens', 'jantar mantar', 'dmrc',
+        ],
+    },
+    {
+        city: 'HYDERABAD',
+        terms: [
+            'hyderabad', 'secunderabad', 'cyberabad', 'telangana', 'hitech city', 'hi-tech city',
+            'gachibowli', 'banjara hills', 'jubilee hills', 'madhapur', 'kukatpally',
+            'nanakramguda', 'shamshabad', 'rajiv gandhi international', 'ghmc', 'hmda',
+            'charminar', 'financial district',
+        ],
+    },
+    {
+        city: 'MUMBAI',
+        terms: [
+            'mumbai', 'bombay', 'maharashtra', 'navi mumbai', 'thane', 'bandra', 'andheri',
+            'dadar', 'colaba', 'bkc', 'bandra kurla', 'nariman point', 'cuffe parade',
+            'powai', 'borivali', 'churchgate', 'csmt', 'chhatrapati shivaji', 'best bus',
+            'mmrda', 'brihanmumbai', 'mahalaxmi', 'worli', 'juhu',
+        ],
+    },
+    {
+        city: 'CHENNAI',
+        terms: [
+            'chennai', 'madras', 'tamil nadu', 'tamilnadu', 't nagar', 't. nagar', 'anna nagar',
+            'adyar', 'velachery', 'guindy', 'mylapore', 'marina beach', 'tambaram',
+            'meenambakkam', 'chennai international', 'cmda', 'koyambedu', 'omr', 'ecr',
+        ],
+    },
+];
+
+// Out-of-scope locations that commonly leak through loose Google News queries.
+// If a headline references any of these AND names no in-scope city, drop it.
+const FOREIGN_LOCATION_TERMS = [
+    // US
+    'san francisco', 'silicon valley', 'new york', 'washington', 'los angeles', 'chicago',
+    'texas', 'california', 'seattle', 'boston', 'florida', 'united states', 'u.s.',
+    'usa', 'america', 'white house', 'pentagon',
+    // Europe
+    'london', 'paris', 'berlin', 'brussels', 'madrid', 'rome', 'moscow', 'kyiv', 'kiev',
+    'ukraine', 'russia', 'europe', 'germany', 'france', 'united kingdom',
+    // Middle East / conflict
+    'gaza', 'israel', 'tel aviv', 'iran', 'tehran', 'iraq', 'syria', 'lebanon', 'hezbollah',
+    'hamas',
+    // South / East Asia (non-India)
+    'pakistan', 'islamabad', 'karachi', 'lahore', 'bangladesh', 'dhaka', 'sri lanka',
+    'colombo', 'nepal', 'kathmandu', 'china', 'beijing', 'shanghai', 'japan', 'tokyo',
+    'singapore', 'dubai', 'abu dhabi', 'doha',
+    // Other
+    'toronto', 'sydney', 'melbourne', 'canada', 'australia',
+];
+
+/**
+ * Whole-word match using non-alphanumeric boundaries. This prevents short
+ * aliases like "orr" or "ncr" from matching inside unrelated words
+ * (e.g. "tomorrow", "corridor", "concrete").
+ */
+function containsTerm(text: string, term: string): boolean {
+    const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(text);
+}
+
+/** Detect which of the 5 in-scope cities a headline belongs to, or null. */
+export function resolveCityFromText(text: string): SupportedCity | null {
+    const t = text.toLowerCase();
+    for (const m of CITY_MATCHERS) {
+        if (m.terms.some(term => containsTerm(t, term))) return m.city;
+    }
+    return null;
+}
+
+/** True if the headline references an out-of-scope / foreign location. */
+export function mentionsForeignLocation(text: string): boolean {
+    const t = text.toLowerCase();
+    return FOREIGN_LOCATION_TERMS.some(term => containsTerm(t, term));
+}
+
+/**
+ * STRICT 5-city gate. An item is kept only if it can be tied to one of the 5
+ * cities. We trust headline content over the feed it came from:
+ *   1. If the headline names an in-scope city → keep & re-tag to that city.
+ *   2. Else if it names a foreign location → drop (this kills SF-style leaks).
+ *   3. Else fall back to the feed-assigned city ONLY if it is one of the 5.
+ * Returns the resolved city, or null if the item should be dropped.
+ */
+function gateToFiveCities(item: NewsItem): SupportedCity | null {
+    const hay = `${item.headline} ${item.source ?? ''}`;
+    const fromText = resolveCityFromText(hay);
+    if (fromText) return fromText;
+    if (mentionsForeignLocation(hay)) return null;
+    const tagged = (item.city ?? '').toUpperCase();
+    if ((SUPPORTED_CITIES as readonly string[]).includes(tagged)) return tagged as SupportedCity;
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// 7 RISK-GROUP TAXONOMY (added alongside the existing `category` field)
+// ---------------------------------------------------------------------------
+export type RiskGroup =
+    | 'geopolitical_civil'   // 1. Geopolitical & Civil Threat Matrix
+    | 'mobility_infra'       // 2. Mobility & Infrastructure Disruptions
+    | 'aviation_airspace'    // 3. Aviation & Airspace Risks
+    | 'environmental'        // 4. Environmental & Climate Hazards
+    | 'public_health'        // 5. Public Health & Biosecurity
+    | 'administrative'       // 6. Administrative & Executive Friction
+    | 'digital_utility';     // 7. Digital, Power & Utility Failures
+
+export const RISK_GROUP_LABELS: Record<RiskGroup, string> = {
+    geopolitical_civil: 'Geopolitical & Civil',
+    mobility_infra: 'Mobility & Infrastructure',
+    aviation_airspace: 'Aviation & Airspace',
+    environmental: 'Environmental & Climate',
+    public_health: 'Public Health',
+    administrative: 'Administrative',
+    digital_utility: 'Digital, Power & Utility',
+};
+
+const RISK_GROUP_KEYWORDS: Record<RiskGroup, string[]> = {
+    geopolitical_civil: [
+        'war', 'conflict', 'military', 'terror', 'terrorist', 'bomb', 'blast', 'ied',
+        'sabotage', 'bomb threat', 'hoax', 'strike', 'protest', 'riot', 'bandh', 'agitation',
+        'communal', 'unrest', 'clash', 'active shooter', 'shooting', 'workplace violence',
+    ],
+    mobility_infra: [
+        'road closure', 'road closed', 'traffic diversion', 'traffic jam', 'gridlock',
+        'metro', 'bridge', 'flyover', 'construction', 'fuel shortage', 'supply chain',
+        'rail strike', 'bus strike', 'transport strike', 'train cancelled', 'cargo', 'logistics',
+    ],
+    aviation_airspace: [
+        'airport', 'flight', 'flights', 'grounded', 'notam', 'air traffic control', 'atc',
+        'radar', 'runway', 'drone', 'uav', 'airspace', 'dgca', 'aviation',
+    ],
+    environmental: [
+        'flood', 'waterlogging', 'cloudburst', 'cyclone', 'earthquake', 'heatwave', 'wildfire',
+        'aqi', 'air quality', 'weather', 'imd', 'rain', 'storm', 'landslide', 'drought',
+    ],
+    public_health: [
+        'epidemic', 'pandemic', 'outbreak', 'dengue', 'cholera', 'disease', 'virus',
+        'contamination', 'food poisoning', 'water contamination', 'bio-hazard', 'biohazard',
+        'health emergency', 'quarantine',
+    ],
+    administrative: [
+        'vip movement', 'green corridor', 'section 144', 'curfew', 'political rally', 'summit',
+        'raid', 'tax raid', 'labour raid', 'regulatory', 'shutdown order',
+    ],
+    digital_utility: [
+        'power cut', 'power outage', 'grid', 'grid collapse', 'load shedding', 'water supply',
+        'fiber cut', 'telecom outage', 'internet outage', 'cyber', 'ransomware', 'data breach',
+        'hacking', 'phishing', 'cert-in',
+    ],
+};
+
+/** Classify a headline into the 7-group taxonomy (best single match, or null). */
+export function classifyRiskGroup(headline: string): RiskGroup | null {
+    const t = headline.toLowerCase();
+    let best: RiskGroup | null = null;
+    let bestHits = 0;
+    (Object.keys(RISK_GROUP_KEYWORDS) as RiskGroup[]).forEach(g => {
+        const hits = RISK_GROUP_KEYWORDS[g].filter(k => t.includes(k)).length;
+        if (hits > bestHits) { bestHits = hits; best = g; }
+    });
+    return best;
+}
 
 // ---------------------------------------------------------------------------
 // Bangalore 18-neighborhood geofence system
@@ -616,12 +812,26 @@ const NEGATIVE_KEYWORDS = [
     // Lifestyle / consumer
     'tips for', 'how to', 'best places', 'top 10', 'review:', 'unboxing', 'smartphone launch',
     'product launch', 'new car', 'automobile', 'fashion week', 'reality show',
+    // NOTE: retail/vehicle promo detection moved to the shared noise-filter
+    // module (bare brand names like 'ducati' wrongly killed legit items such
+    // as "Ducati showroom gutted in fire"). See validateNewsItem below.
     // Markets / finance (non-crisis)
     'sensex closes', 'nifty closes', 'quarterly earnings', 'ipo opens', 'merger announcement',
     'profit rises', 'revenue grows', 'annual report',
     // Financial products / REIT / IPO noise
     'ipo subscribed', 'reit ipo', 'reit', 'subscription', 'oversubscribed', 'bagmane',
     'initial public offering', 'nse', 'bse', 'stock exchange listing', 'share price',
+    // International / global events (non-India)
+    'ukraine war', 'russia ukraine', 'israel gaza', 'hamas attack', 'hezbollah',
+    'nato summit', 'us congress', 'white house', 'pentagon briefing', 'eu parliament',
+    'federal reserve', 'wall street', 'dow jones', 'nasdaq', 's&p 500',
+    'bundesliga', 'premier league', 'la liga', 'champions league', 'nba finals', 'nfl draft',
+    'wimbledon', 'french open', 'us open tennis', 'formula 1', 'f1 grand prix',
+    // Additional entertainment
+    'award show', 'red carpet', 'music video', 'album release', 'concert tour',
+    'reality tv', 'bigg boss', 'kbc winner', 'game show',
+    // Astrology / pseudo-news
+    'horoscope', 'rashifal', 'numerology', 'vastu', 'astrology prediction',
 ];
 
 // ---------------------------------------------------------------------------
@@ -648,7 +858,10 @@ function computeSeverity(headline: string): number {
 // ---------------------------------------------------------------------------
 function validateNewsItem(headline: string, category: NewsItem['category']): boolean {
     const text = headline.toLowerCase();
-    // Block pure noise
+    // Shared consolidated junk filter first (single source of truth —
+    // new drop rules belong in noise-filter.ts).
+    if (isJunk(headline)) return false;
+    // Block pure noise (news-feed-specific extras)
     if (NEGATIVE_KEYWORDS.some(k => text.includes(k))) return false;
     // Must contain at least one category keyword
     const keywords = CATEGORY_KEYWORDS[category] ?? [];
@@ -699,9 +912,10 @@ function parseRssItems(
         if (lang === 'en' && !validateNewsItem(title, category)) return;
 
         const pubDateTime = pubDate ? new Date(pubDate).getTime() : Date.now();
-        
-        // Filter out news older than 48 hours
-        if (Date.now() - pubDateTime > 48 * 60 * 60 * 1000) return;
+
+        // Freshness: keep up to 24h here; fetchIndiaNews prefers the last 6h
+        // and only falls back to older items when the fresh set is thin.
+        if (Date.now() - pubDateTime > 24 * 60 * 60 * 1000) return;
 
         // Detect Kannada vernacular source
         const kannadaDetection = detectKannadaSource(source, title);
@@ -718,7 +932,10 @@ function parseRssItems(
             langLabel,
             category,
             severity: computeSeverity(title),
-            confidence: Math.random() > 0.3 ? 'confirmed' : 'unconfirmed',
+            // Confirmed = attributed to a known mainstream outlet; anything
+            // else stays unconfirmed. (Previously this was Math.random().)
+            confidence: CORE_SOURCES.some(s => source.toLowerCase().includes(s.toLowerCase()))
+                ? 'confirmed' : 'unconfirmed',
             // Kannada vernacular source tracking
             isKannadaSource: kannadaDetection.isKannada,
             kannadaConfidence: kannadaDetection.confidence,
@@ -753,13 +970,30 @@ async function fetchRssFeed(
     langLabel?: string,
 ): Promise<NewsItem[]> {
     try {
-        const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+        const resp = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+        if (!resp.ok) return [];
         const xml = await resp.text();
-        if (!xml || xml.includes('Error')) return [];
+        // Only reject actual error payloads, not any feed whose content happens
+        // to contain the word "Error" in a headline.
+        if (!xml || !xml.includes('<item>')) return [];
         return parseRssItems(xml, category, city, lang, langLabel);
     } catch {
         return [];
     }
+}
+
+/** Run fetch tasks in batches so ~100 Google News queries don't fire at once
+ *  (which triggers 429 rate-limiting and silently empties the dashboard). */
+async function fetchInBatches<T>(
+    tasks: (() => Promise<T[]>)[],
+    batchSize = 12,
+): Promise<T[]> {
+    const out: T[] = [];
+    for (let i = 0; i < tasks.length; i += batchSize) {
+        const settled = await Promise.allSettled(tasks.slice(i, i + batchSize).map(t => t()));
+        settled.forEach(r => { if (r.status === 'fulfilled') out.push(...r.value); });
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -778,34 +1012,46 @@ export async function fetchIndiaNews(force = false): Promise<NewsItem[]> {
         return cachedIndiaNews;
     }
 
-    // English feeds
+    // English feeds — city feeds only. Global (cityless) feeds are intentionally
+    // excluded: the strict 5-city gate below would drop their items anyway, and
+    // skipping the fetch saves bandwidth and enrichment cost.
     const allFeeds = [
         ...SUPPORTED_CITIES.flatMap(city =>
             CITY_FEEDS[city].map(f => ({ ...f, city })),
         ),
-        ...GLOBAL_SOURCES_FEEDS.map(f => ({ ...f, city: undefined })),
     ];
 
-    const [enResults, vernResults] = await Promise.all([
-        Promise.allSettled(allFeeds.map(f => fetchRssFeed(f.url, f.category, f.city))),
-        Promise.allSettled(
-            VERNACULAR_FEEDS.map(f =>
-                fetchRssFeed(f.url, f.category, f.city, f.lang, f.langLabel)
-            )
-        ),
+    // Batched (12 at a time) so Google News doesn't 429 the whole refresh.
+    let items: NewsItem[] = await fetchInBatches([
+        ...allFeeds.map(f => () => fetchRssFeed(f.url, f.category, f.city)),
+        ...VERNACULAR_FEEDS.map(f => () => fetchRssFeed(f.url, f.category, f.city, f.lang, f.langLabel)),
     ]);
-
-    let items: NewsItem[] = [
-        ...enResults
-            .filter((r): r is PromiseFulfilledResult<NewsItem[]> => r.status === 'fulfilled')
-            .flatMap(r => r.value),
-        ...vernResults
-            .filter((r): r is PromiseFulfilledResult<NewsItem[]> => r.status === 'fulfilled')
-            .flatMap(r => r.value),
-    ];
 
     // Deduplicate first (reduces token cost)
     items = deduplicateItems(items);
+
+    // Freshness: prefer the last 6 hours; if that leaves a thin dashboard,
+    // fall back to the last 24 hours instead of showing nothing.
+    const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+    const fresh = items.filter(i => i.timestamp >= sixHoursAgo);
+    if (fresh.length >= 20) items = fresh;
+
+    // ── STRICT 5-CITY GEOFENCE ──────────────────────────────────────────────
+    // Re-tag each item's city from its actual headline content and drop anything
+    // that cannot be tied to Bangalore / Delhi / Hyderabad / Mumbai / Chennai.
+    // This is what removes the "San Francisco"-style foreign leakage.
+    const before = items.length;
+    items = items.reduce<NewsItem[]>((acc, item) => {
+        const city = gateToFiveCities(item);
+        if (!city) return acc; // out of scope → drop
+        acc.push({
+            ...item,
+            city,
+            riskGroup: classifyRiskGroup(item.headline) ?? item.riskGroup,
+        });
+        return acc;
+    }, []);
+    console.log(`[NewsService] Geofence: kept ${items.length}/${before} items (5-city scope)`);
 
     // Sort by recency before enrichment so we enrich the freshest items first
     items = items.sort((a, b) => b.timestamp - a.timestamp);

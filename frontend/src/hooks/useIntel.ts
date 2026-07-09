@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchLiveIntel, type IntelItem } from '@/lib/intel-service';
 
-const POLL_INTERVAL = 5 * 60_000; // 5 mins
+const POLL_INTERVAL = 90 * 60_000; // 90 minutes (auto-refresh the feed)
 
 export function useLiveIntel() {
     const [intel, setIntel] = useState<IntelItem[]>([]);
