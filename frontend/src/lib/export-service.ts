@@ -531,6 +531,7 @@ export interface BriefIncident {
 
 export interface StructuredBrief {
   scope: string;              // e.g. "MUMBAI – PUNE" or "BENGALURU · 5-CITY"
+  overview: string;           // executive overview paragraph
   highPriority: string[];
   watchlist: string[];
   incidents: BriefIncident[];
@@ -548,24 +549,25 @@ export async function generateStructuredBrief(items: ExportableArticle[]): Promi
       ` (source: ${it.source}${it.time ? ', ' + it.time : ''})`)
     .join('\n');
 
-  const SYSTEM = `You are a senior crisis-intelligence analyst producing a corporate daily security brief for business operations teams in Indian cities. You receive numbered news signals and must return ONLY a valid JSON object (no markdown) with this exact shape:
+  const SYSTEM = `You are a senior crisis-intelligence analyst producing a comprehensive corporate daily security brief for business operations teams in Indian cities. You receive numbered news signals and must return ONLY a valid JSON object (no markdown) with this exact shape:
 {
  "scope": "CITY or CITY – CITY string naming the geography this brief covers, uppercase",
- "highPriority": ["3-6 short bullet strings — the most operationally significant developments"],
- "watchlist": ["3-6 short bullet strings — emerging situations to monitor"],
+ "overview": "one substantive executive-overview paragraph (4-7 sentences): the day's overall risk picture, the dominant themes, how conditions are trending, and the single most important thing an operations head must know",
+ "highPriority": ["4-7 bullet strings — the most operationally significant developments, each specific enough to act on"],
+ "watchlist": ["4-7 bullet strings — emerging situations to monitor, each with WHY it could escalate"],
  "incidents": [
    {
      "incidentType": "short label e.g. 'Weather / Flooding / Mobility'",
      "city": "city or corridor name",
      "riskCategory": "HIGH" | "MEDIUM" | "LOW",
      "sourceRefs": [signal index numbers that support this incident],
-     "snapshot": ["2-4 factual bullets describing the current situation"],
-     "businessImpact": ["2-4 bullets on impact to staff movement, logistics, facilities, travel"],
-     "shortTermImplications": ["2-4 bullets with recommended actions / what to expect next 24-48h"]
+     "snapshot": ["3-5 factual bullets: what is happening, where exactly, since when, scale/numbers, current status"],
+     "businessImpact": ["3-5 bullets covering, where relevant: staff commute & safety, executive travel, logistics/supply chain, facility operations, vendor/field movement"],
+     "shortTermImplications": ["3-5 bullets: concrete recommended actions, what to expect in the next 24-48h, thresholds that should trigger escalation"]
    }
  ]
 }
-Rules: CLUSTER related signals into one incident (e.g. all rain/flood items for one city = one incident). 3-8 incidents total, ordered by risk. sourceRefs MUST only contain indices that exist in the input. Be factual and specific — include numbers, road names, alert levels when present in the signals. No speculation beyond reasonable operational implication. British-Indian business English.`;
+Rules: CLUSTER related signals into one incident (e.g. all rain/flood items for one city = one incident). 4-10 incidents total, ordered by risk. sourceRefs MUST only contain indices that exist in the input. Be detailed, factual and specific — always carry over numbers, road/area names, alert levels, timings and casualty figures that appear in the signals. No speculation beyond reasonable operational implication. British-Indian business English.`;
 
   try {
     const resp = await fetch(GROQ_CHAT_URL, {
@@ -578,7 +580,7 @@ Rules: CLUSTER related signals into one incident (e.g. all rain/flood items for 
           { role: 'user', content: `Signals:\n${context}\n\nProduce the JSON brief.` },
         ],
         temperature: 0.2,
-        max_tokens: 4000,
+        max_tokens: 6000,
         response_format: { type: 'json_object' },
       }),
       signal: AbortSignal.timeout(45000),
@@ -609,6 +611,7 @@ Rules: CLUSTER related signals into one incident (e.g. all rain/flood items for 
     if (!incidents.length) return fallbackStructuredBrief(items);
     return {
       scope: String(parsed.scope || deriveScope(items)),
+      overview: typeof parsed.overview === 'string' ? parsed.overview.trim() : '',
       highPriority: clean(parsed.highPriority),
       watchlist: clean(parsed.watchlist),
       incidents,
@@ -660,6 +663,9 @@ function fallbackStructuredBrief(items: ExportableArticle[]): StructuredBrief {
 
   return {
     scope: deriveScope(items),
+    overview: `${items.length} signal(s) reviewed across ${deriveScope(items)}; ` +
+      `${incidents.filter(i => i.riskCategory === 'HIGH').length} high-risk cluster(s) identified. ` +
+      `(AI unavailable — heuristic brief shown.)`,
     highPriority: high.length ? high : ['No high-priority incidents in the selected signals.'],
     watchlist: watch.slice(0, 6),
     incidents,
@@ -726,6 +732,13 @@ export function exportComprehensiveBrief(
     `<table style="border-collapse:collapse;width:100%"><tr>` +
     `<td style="background:#9f1d1d;color:#ffffff;font-weight:bold;text-align:center;padding:5pt;font-size:11.5pt;letter-spacing:1pt">` +
     `${dateLine} | ${escapeHtml(brief.scope)}</td></tr></table>` +
+
+    // EXECUTIVE OVERVIEW
+    (brief.overview
+      ? sectionBar('EXECUTIVE OVERVIEW') +
+        `<table style="border-collapse:collapse;width:100%"><tr>` +
+        `<td style="${td};font-size:10pt;line-height:1.55">${escapeHtml(brief.overview)}</td></tr></table>`
+      : '') +
 
     // KEY FOCUS AREAS
     sectionBar('KEY FOCUS AREAS') +

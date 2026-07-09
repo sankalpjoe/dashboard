@@ -14,12 +14,25 @@ const BROWSER_ORIGIN_PATTERNS = [
   ]),
 ];
 
+// This deployment's own Vercel hosts (set automatically by Vercel) plus any
+// custom domains from ALLOWED_ORIGINS (comma-separated full origins).
+const SELF_ORIGINS = [
+  process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  process.env.VERCEL_URL,
+  process.env.VERCEL_BRANCH_URL,
+]
+  .filter(Boolean)
+  .map((h) => `https://${h}`)
+  .concat((process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean));
+
 function isDesktopOrigin(origin) {
   return Boolean(origin) && DESKTOP_ORIGIN_PATTERNS.some(p => p.test(origin));
 }
 
 function isTrustedBrowserOrigin(origin) {
-  return Boolean(origin) && BROWSER_ORIGIN_PATTERNS.some(p => p.test(origin));
+  if (!origin) return false;
+  if (SELF_ORIGINS.includes(origin)) return true;
+  return BROWSER_ORIGIN_PATTERNS.some(p => p.test(origin));
 }
 
 function extractOriginFromReferer(referer) {

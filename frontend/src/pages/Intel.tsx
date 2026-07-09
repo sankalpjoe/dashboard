@@ -264,11 +264,7 @@ export default function Intel() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', height: 60, borderBottom: `1px solid ${T.border}`, background: T.bg, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
             <span style={{ fontFamily: T.fontBody, fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', color: T.text }}>SIGNAL<span style={{ color: ACCENT }}>INTEL</span></span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {navBtn('BRIEFING', 'BRIEFING MODE')}
-              {navBtn('ARCHIVED', 'ARCHIVED')}
-              {navBtn('ANALYTICS', 'ANALYTICS')}
-            </div>
+            <div style={{ display: 'flex', gap: 4 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, position: 'relative' }}>
             <button onClick={() => setExportMenu(m => !m)} disabled={exporting}

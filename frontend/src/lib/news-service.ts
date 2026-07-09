@@ -901,7 +901,7 @@ function parseRssItems(
     let count = 0;
 
     elements.forEach(el => {
-        if (count >= 10) return;
+        if (count >= 15) return;
         const title = el.querySelector('title')?.textContent?.trim() ?? '';
         const link = el.querySelector('link')?.textContent?.trim() ?? '';
         const pubDate = el.querySelector('pubDate')?.textContent?.trim() ?? '';
@@ -1030,11 +1030,11 @@ export async function fetchIndiaNews(force = false): Promise<NewsItem[]> {
     // Deduplicate first (reduces token cost)
     items = deduplicateItems(items);
 
-    // Freshness: prefer the last 6 hours; if that leaves a thin dashboard,
-    // fall back to the last 24 hours instead of showing nothing.
+    // Freshness: prefer the last 6 hours, but only when that still leaves a
+    // well-populated dashboard — otherwise keep the full 24-hour window.
     const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
     const fresh = items.filter(i => i.timestamp >= sixHoursAgo);
-    if (fresh.length >= 20) items = fresh;
+    if (fresh.length >= 40) items = fresh;
 
     // ── STRICT 5-CITY GEOFENCE ──────────────────────────────────────────────
     // Re-tag each item's city from its actual headline content and drop anything

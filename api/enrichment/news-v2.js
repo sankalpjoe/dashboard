@@ -3,7 +3,7 @@ import { checkRateLimit } from '../_rate-limit.js';
 
 export const config = { runtime: 'edge' };
 
-const GROQ_KEY = process.env.VITE_GROQ_API_KEY;
+const GROQ_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
 // llama-3.3-70b-versatile is deprecated on Groq (shutdown 2026-08-16).
 const GROQ_MODEL = process.env.VITE_GROQ_MODEL || 'openai/gpt-oss-120b';
 

@@ -1078,7 +1078,7 @@ export default function Intelligence() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: T.bg }}>
       <div style={{ padding: '16px 28px 0', borderBottom: `1px solid ${T.border}`, flexShrink: 0 }}>
-        <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 12 }}>OSINT</div>
+        <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 22, fontWeight: 800, color: T.text, marginBottom: 12 }}>ALERTS</div>
         <div style={{ display: 'flex', gap: 0 }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{

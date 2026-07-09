@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   { id: 'INTEL', label: 'Intel Brief' },
-  { id: 'OSINT', label: 'OSINT'       },
+  { id: 'OSINT', label: 'Alerts'      },
 ] as const;
 
 const NavBar = ({
@@ -48,10 +48,6 @@ const NavBar = ({
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 14, fontWeight: 700, color: '#000', letterSpacing: '0.06em' }}>
           DASHINT
-        </span>
-        <div style={{ width: 1, height: 20, background: '#e5e5e5', margin: '0 6px' }} />
-        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#666', letterSpacing: '0.08em' }}>
-          INDIA CRISIS MONITOR
         </span>
       </div>
 
