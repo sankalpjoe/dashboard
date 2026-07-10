@@ -390,6 +390,47 @@ function cachedResponse(hit, corsHeaders, stale = false) {
   });
 }
 
+// ── Google News request budget ───────────────────────────────────────────────
+// Google rate-limits by IP and Vercel egress IPs are shared, so we cap our own
+// upstream hits per hour. Over budget + stale cache available → serve stale.
+// Over budget + nothing cached → still fetch (an empty panel is worse than one
+// request). Counter uses Upstash when configured (accurate across instances),
+// otherwise falls back to a per-instance in-memory count (soft guard).
+const GNEWS_BUDGET_PER_HOUR = Number(process.env.GNEWS_BUDGET_PER_HOUR || 400);
+let memCount = { hour: '', n: 0 };
+
+function hourKey() {
+  return new Date().toISOString().slice(0, 13); // e.g. 2026-07-09T11
+}
+
+async function bumpGnewsCount() {
+  const hk = hourKey();
+  if (memCount.hour !== hk) memCount = { hour: hk, n: 0 };
+  memCount.n++;
+
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return memCount.n;
+  try {
+    const resp = await fetch(`${url}/pipeline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify([
+        ['INCR', `gnews:${hk}`],
+        ['EXPIRE', `gnews:${hk}`, '7200'],
+      ]),
+      signal: AbortSignal.timeout(1500),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const n = Number(data?.[0]?.result);
+      if (Number.isFinite(n)) return n;
+    }
+  } catch { /* fall back to memory count */ }
+  return memCount.n;
+}
+
+
 export default async function handler(req) {
   const corsHeaders = getCorsHeaders(req, 'GET, OPTIONS');
 
@@ -453,6 +494,17 @@ export default async function handler(req) {
     // Google News is slow - use longer timeout
     const isGoogleNews = feedUrl.includes('news.google.com');
     const timeout = isGoogleNews ? 20000 : 12000;
+
+    // Budget guard: over the hourly Google News budget AND we have a stale
+    // copy → serve stale instead of hitting Google. Never blank a panel:
+    // uncached requests still go through even over budget.
+    if (isGoogleNews) {
+      const n = await bumpGnewsCount();
+      if (n > GNEWS_BUDGET_PER_HOUR) {
+        const staleHit = cacheGet(feedUrl, FEED_STALE_MS);
+        if (staleHit) return cachedResponse(staleHit, corsHeaders, true);
+      }
+    }
 
     const fetchDirect = async () => {
       const response = await fetchWithTimeout(feedUrl, {

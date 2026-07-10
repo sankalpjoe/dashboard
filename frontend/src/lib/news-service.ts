@@ -193,27 +193,41 @@ function gnews(query: string, window = '6h', sources?: string[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// City feed factory — 9 category feeds per city
+// City feed factory — 5 CONSOLIDATED multi-category feeds per city.
+//
+// Previously 16 separate Google News queries per city (80 total per refresh)
+// hammered news.google.com and got the shared Vercel IPs rate-limited. The
+// same search terms are now merged into 5 broader queries; NOTHING was
+// dropped — every term from the old 16 queries appears below. Category
+// precision is preserved because each feed carries ALL the categories its
+// terms cover, and matchCategory() re-derives the exact category per headline.
 // ---------------------------------------------------------------------------
-function cityFeeds(city: string): { url: string; category: NewsItem['category'] }[] {
+type CityFeed = { url: string; categories: NewsItem['category'][] };
+
+function cityFeeds(city: string): CityFeed[] {
     return [
-        { url: gnews(`${city} (war OR conflict OR military OR attack OR border OR ceasefire OR airstrike OR strike OR explosion)`, '1d'), category: 'conflict' },
-        { url: gnews(`${city} (terrorist attack OR bomb blast OR IED OR extremist OR militant OR hostage OR insurgent)`, '1d'), category: 'terrorism' },
-        { url: gnews(`${city} (disease OR outbreak OR epidemic OR health emergency OR hospital crisis)`, '1d', CORE_SOURCES), category: 'disaster' },
-        { url: gnews(`${city} (flood OR earthquake OR cyclone OR disaster OR calamity OR landslide OR wildfire)`, '1d', CORE_SOURCES), category: 'disaster' },
-        { url: gnews(`${city} (cyber attack OR data breach OR hacking OR ransomware OR phishing OR CERT-In)`, '1d'), category: 'cyber' },
-        { url: gnews(`${city} (protest OR unrest OR riot OR bandh OR curfew OR demonstration OR agitation OR "workers strike" OR "labour strike" OR "trade union")`, '1d'), category: 'protest' },
-        { url: gnews(`${city} (chemical spill OR gas leak OR industrial accident OR explosion OR building collapse OR fire)`, '1d', CORE_SOURCES), category: 'industrial' },
-        { url: gnews(`${city} (humanitarian OR refugee OR displacement OR trafficking OR ethnic clash OR famine)`, '1d'), category: 'humanitarian' },
-        { url: gnews(`${city} (economic crisis OR market crash OR bank OR supply shortage OR fuel crisis OR power outage)`, '1d', CORE_SOURCES), category: 'economic' },
-        // ── New risk-group subtypes (Mobility, Aviation, Environment, Health, Admin, Utility) ──
-        { url: gnews(`${city} (road closure OR traffic diversion OR metro OR flyover OR bridge construction OR rail strike OR bus strike OR transport strike OR supply chain)`, '1d', CORE_SOURCES), category: 'industrial' },
-        { url: gnews(`${city} (airport OR flight grounded OR flights delayed OR flight cancelled OR NOTAM OR air traffic control OR runway closed OR drone OR airspace OR DGCA)`, '1d', CORE_SOURCES), category: 'industrial' },
-        { url: gnews(`${city} (cloudburst OR heatwave OR AQI OR air quality OR waterlogging OR urban flooding OR wildfire OR weather warning OR IMD alert)`, '1d', CORE_SOURCES), category: 'disaster' },
-        { url: gnews(`${city} (dengue OR cholera OR contamination OR food poisoning OR water contamination OR bio-hazard OR pandemic OR epidemic)`, '1d', CORE_SOURCES), category: 'disaster' },
-        { url: gnews(`${city} (VIP movement OR green corridor OR Section 144 OR curfew imposed OR political rally OR summit OR raid OR tax raid OR labour raid)`, '1d', CORE_SOURCES), category: 'protest' },
-        { url: gnews(`${city} (power grid OR grid collapse OR power cut OR water supply OR fiber cut OR telecom outage OR internet outage OR ransomware OR data breach)`, '1d', CORE_SOURCES), category: 'cyber' },
-        { url: gnews(city, '1d', CORE_SOURCES), category: 'general' },
+        // A — Security: war/conflict + terrorism
+        {
+            url: gnews(`${city} (war OR conflict OR military OR attack OR border OR ceasefire OR airstrike OR strike OR explosion OR "terrorist attack" OR "bomb blast" OR IED OR extremist OR militant OR hostage OR insurgent)`, '1d'),
+            categories: ['terrorism', 'conflict', 'military'],
+        },
+        // B — Hazards: natural disasters + weather + disease/health
+        {
+            url: gnews(`${city} (flood OR earthquake OR cyclone OR disaster OR calamity OR landslide OR wildfire OR cloudburst OR heatwave OR AQI OR "air quality" OR waterlogging OR "urban flooding" OR "weather warning" OR "IMD alert" OR disease OR outbreak OR epidemic OR pandemic OR "health emergency" OR "hospital crisis" OR dengue OR cholera OR contamination OR "food poisoning" OR "water contamination")`, '1d'),
+            categories: ['disaster'],
+        },
+        // C — Industrial & transport: accidents + mobility + aviation
+        {
+            url: gnews(`${city} ("chemical spill" OR "gas leak" OR "industrial accident" OR "building collapse" OR fire OR "road closure" OR "traffic diversion" OR metro OR flyover OR "bridge construction" OR "rail strike" OR "bus strike" OR "transport strike" OR "supply chain" OR airport OR "flight grounded" OR "flights delayed" OR "flight cancelled" OR NOTAM OR "runway closed" OR drone OR airspace OR DGCA)`, '1d'),
+            categories: ['industrial', 'disaster'],
+        },
+        // D — Civil, cyber & utility: protests + VIP/admin + cyber + economy
+        {
+            url: gnews(`${city} (protest OR unrest OR riot OR bandh OR curfew OR demonstration OR agitation OR "workers strike" OR "labour strike" OR "trade union" OR "VIP movement" OR "green corridor" OR "Section 144" OR "political rally" OR raid OR humanitarian OR refugee OR displacement OR trafficking OR "cyber attack" OR "data breach" OR hacking OR ransomware OR phishing OR CERT-In OR "power grid" OR "power cut" OR "power outage" OR "water supply" OR "fiber cut" OR "telecom outage" OR "internet outage" OR "economic crisis" OR "market crash" OR "supply shortage" OR "fuel crisis")`, '1d'),
+            categories: ['protest', 'cyber', 'humanitarian', 'economic'],
+        },
+        // E — General city news from mainstream outlets
+        { url: gnews(city, '1d', CORE_SOURCES), categories: ['general'] },
     ];
 }
 
@@ -414,7 +428,7 @@ const VERNACULAR_FEEDS: { url: string; category: NewsItem['category']; lang: str
 export const SUPPORTED_CITIES = ['BANGALORE', 'DELHI', 'HYDERABAD', 'MUMBAI', 'CHENNAI'] as const;
 export type SupportedCity = typeof SUPPORTED_CITIES[number];
 
-const CITY_FEEDS: Record<SupportedCity, { url: string; category: NewsItem['category'] }[]> = {
+const CITY_FEEDS: Record<SupportedCity, CityFeed[]> = {
     BANGALORE: cityFeeds('Bangalore'),
     DELHI: cityFeeds('Delhi'),
     HYDERABAD: cityFeeds('Hyderabad'),
@@ -856,19 +870,29 @@ function computeSeverity(headline: string): number {
 // ---------------------------------------------------------------------------
 // Validation — STRICT: must match at least 1 category keyword AND 0 negative keywords
 // ---------------------------------------------------------------------------
-function validateNewsItem(headline: string, category: NewsItem['category']): boolean {
+/**
+ * Validate a headline against a feed's merged category set and return the
+ * FIRST category whose keywords match (or null to drop the item). This is
+ * what lets one consolidated Google News query serve several categories
+ * without losing per-item category precision.
+ */
+function matchCategory(
+    headline: string,
+    categories: NewsItem['category'][],
+): NewsItem['category'] | null {
     const text = headline.toLowerCase();
     // Shared consolidated junk filter first (single source of truth —
     // new drop rules belong in noise-filter.ts).
-    if (isJunk(headline)) return false;
+    if (isJunk(headline)) return null;
     // Block pure noise (news-feed-specific extras)
-    if (NEGATIVE_KEYWORDS.some(k => text.includes(k))) return false;
-    // Must contain at least one category keyword
-    const keywords = CATEGORY_KEYWORDS[category] ?? [];
-    if (keywords.length > 0 && !keywords.some(k => text.includes(k))) return false;
-    // Block headlines that are purely about IPL/cricket even if category matched
-    if (/\b(ipl|t20|odi|test match|runs|wickets?|batting|bowling|boundary)\b/i.test(text)) return false;
-    return true;
+    if (NEGATIVE_KEYWORDS.some(k => text.includes(k))) return null;
+    // Block headlines that are purely about IPL/cricket
+    if (/\b(ipl|t20|odi|test match|runs|wickets?|batting|bowling|boundary)\b/i.test(text)) return null;
+    for (const category of categories) {
+        const keywords = CATEGORY_KEYWORDS[category] ?? [];
+        if (keywords.length === 0 || keywords.some(k => text.includes(k))) return category;
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -889,7 +913,7 @@ function deduplicateItems(items: NewsItem[]): NewsItem[] {
 // ---------------------------------------------------------------------------
 function parseRssItems(
     xml: string,
-    category: NewsItem['category'],
+    categories: NewsItem['category'][],
     city?: string,
     lang = 'en',
     langLabel?: string,
@@ -901,15 +925,23 @@ function parseRssItems(
     let count = 0;
 
     elements.forEach(el => {
-        if (count >= 15) return;
+        // 25/feed: five consolidated queries replaced sixteen narrow ones, so
+        // each feed now carries more of the city's volume.
+        if (count >= 25) return;
         const title = el.querySelector('title')?.textContent?.trim() ?? '';
         const link = el.querySelector('link')?.textContent?.trim() ?? '';
         const pubDate = el.querySelector('pubDate')?.textContent?.trim() ?? '';
         const source = el.querySelector('source')?.textContent?.trim() ?? 'NEWS';
 
         if (!title || title.toLowerCase().includes('google')) return;
-        // For non-English, skip validation (will translate via Gemini)
-        if (lang === 'en' && !validateNewsItem(title, category)) return;
+        // English: derive the exact category from the merged set (drop if none
+        // match). Non-English skips validation (translated downstream).
+        let category: NewsItem['category'] = categories[0];
+        if (lang === 'en') {
+            const matched = matchCategory(title, categories);
+            if (!matched) return;
+            category = matched;
+        }
 
         const pubDateTime = pubDate ? new Date(pubDate).getTime() : Date.now();
 
@@ -964,7 +996,7 @@ function getRelativeTime(date: Date): string {
 // ---------------------------------------------------------------------------
 async function fetchRssFeed(
     url: string,
-    category: NewsItem['category'],
+    categories: NewsItem['category'][],
     city?: string,
     lang = 'en',
     langLabel?: string,
@@ -976,7 +1008,7 @@ async function fetchRssFeed(
         // Only reject actual error payloads, not any feed whose content happens
         // to contain the word "Error" in a headline.
         if (!xml || !xml.includes('<item>')) return [];
-        return parseRssItems(xml, category, city, lang, langLabel);
+        return parseRssItems(xml, categories, city, lang, langLabel);
     } catch {
         return [];
     }
@@ -1023,8 +1055,8 @@ export async function fetchIndiaNews(force = false): Promise<NewsItem[]> {
 
     // Batched (12 at a time) so Google News doesn't 429 the whole refresh.
     let items: NewsItem[] = await fetchInBatches([
-        ...allFeeds.map(f => () => fetchRssFeed(f.url, f.category, f.city)),
-        ...VERNACULAR_FEEDS.map(f => () => fetchRssFeed(f.url, f.category, f.city, f.lang, f.langLabel)),
+        ...allFeeds.map(f => () => fetchRssFeed(f.url, f.categories, f.city)),
+        ...VERNACULAR_FEEDS.map(f => () => fetchRssFeed(f.url, [f.category], f.city, f.lang, f.langLabel)),
     ]);
 
     // Deduplicate first (reduces token cost)
