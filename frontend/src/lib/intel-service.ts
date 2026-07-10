@@ -485,6 +485,11 @@ function reddit(sub: string): string {
   return `/api/rss-proxy?url=${encodeURIComponent(u)}`;
 }
 
+/** Direct publisher RSS via the proxy (no Google News dependency). */
+function pub(feedUrl: string): string {
+  return `/api/rss-proxy?url=${encodeURIComponent(feedUrl)}`;
+}
+
 const PINNED_CITY_FEEDS: PinnedFeed[] = [
   // ── Reddit communities ──
   { url: reddit('bangalore'), source: 'r/bangalore', type: 'general', city: 'BANGALORE' },
@@ -495,6 +500,28 @@ const PINNED_CITY_FEEDS: PinnedFeed[] = [
   { url: gnews('site:citizenmatters.in (Bengaluru OR Bangalore)', '4d'), source: 'CITIZEN MATTERS', type: 'infra', city: 'BANGALORE' },
   { url: gnews('site:citizenmatters.in Mumbai', '4d'),                    source: 'CITIZEN MATTERS', type: 'infra', city: 'MUMBAI'    },
   // Team-BHP (car catalog) and LBB (lifestyle) removed — net noise for a risk feed.
+
+  // ── MAJOR DAILIES — direct city-section RSS (source diversity beyond
+  //    Google News + weather models). City-pinned: publisher city feeds are
+  //    inherently city-scoped even when the headline omits the city name.
+  //    A feed that 404s simply contributes nothing. ──
+  // The Hindu
+  { url: pub('https://www.thehindu.com/news/cities/Delhi/feeder/default.rss'),     source: 'THE HINDU', type: 'general', city: 'DELHI'     },
+  { url: pub('https://www.thehindu.com/news/cities/mumbai/feeder/default.rss'),    source: 'THE HINDU', type: 'general', city: 'MUMBAI'    },
+  { url: pub('https://www.thehindu.com/news/cities/bangalore/feeder/default.rss'), source: 'THE HINDU', type: 'general', city: 'BANGALORE' },
+  { url: pub('https://www.thehindu.com/news/cities/Hyderabad/feeder/default.rss'), source: 'THE HINDU', type: 'general', city: 'HYDERABAD' },
+  { url: pub('https://www.thehindu.com/news/cities/chennai/feeder/default.rss'),   source: 'THE HINDU', type: 'general', city: 'CHENNAI'   },
+  // Hindustan Times
+  { url: pub('https://www.hindustantimes.com/feeds/rss/cities/delhi-news/rssfeed.xml'),     source: 'HINDUSTAN TIMES', type: 'general', city: 'DELHI'     },
+  { url: pub('https://www.hindustantimes.com/feeds/rss/cities/mumbai-news/rssfeed.xml'),    source: 'HINDUSTAN TIMES', type: 'general', city: 'MUMBAI'    },
+  { url: pub('https://www.hindustantimes.com/feeds/rss/cities/bengaluru-news/rssfeed.xml'), source: 'HINDUSTAN TIMES', type: 'general', city: 'BANGALORE' },
+  { url: pub('https://www.hindustantimes.com/feeds/rss/cities/chennai-news/rssfeed.xml'),   source: 'HINDUSTAN TIMES', type: 'general', city: 'CHENNAI'   },
+  // Indian Express (standard WordPress section feeds)
+  { url: pub('https://indianexpress.com/section/cities/delhi/feed/'),     source: 'INDIAN EXPRESS', type: 'general', city: 'DELHI'     },
+  { url: pub('https://indianexpress.com/section/cities/mumbai/feed/'),    source: 'INDIAN EXPRESS', type: 'general', city: 'MUMBAI'    },
+  { url: pub('https://indianexpress.com/section/cities/bangalore/feed/'), source: 'INDIAN EXPRESS', type: 'general', city: 'BANGALORE' },
+  { url: pub('https://indianexpress.com/section/cities/hyderabad/feed/'), source: 'INDIAN EXPRESS', type: 'general', city: 'HYDERABAD' },
+  { url: pub('https://indianexpress.com/section/cities/chennai/feed/'),   source: 'INDIAN EXPRESS', type: 'general', city: 'CHENNAI'   },
 ];
 
 // ── Relevance gate ───────────────────────────────────────────────────────────

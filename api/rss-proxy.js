@@ -520,7 +520,12 @@ export default async function handler(req) {
         const location = response.headers.get('location');
         if (location) {
           const redirectUrl = new URL(location, feedUrl);
-          if (!ALLOWED_DOMAINS.includes(redirectUrl.hostname)) {
+          // Normalize www prefix, same as the entry check — publishers commonly
+          // redirect apex → www (e.g. indianexpress.com → www.indianexpress.com).
+          const rHost = redirectUrl.hostname;
+          const rBare = rHost.replace(/^www\./, '');
+          const rWww = rHost.startsWith('www.') ? rHost : `www.${rHost}`;
+          if (!ALLOWED_DOMAINS.includes(rHost) && !ALLOWED_DOMAINS.includes(rBare) && !ALLOWED_DOMAINS.includes(rWww)) {
             throw new Error('Redirect to disallowed domain');
           }
           return fetchWithTimeout(redirectUrl.href, {
